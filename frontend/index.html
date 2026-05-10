@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PathRadar | AI Resume Skill Gap Analyzer</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="styles.css">
+    
+    <!-- Chart.js for Interactive Visuals -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="background-effects">
+        <div class="glow glow-1"></div>
+        <div class="glow glow-2"></div>
+    </div>
+
+    <header class="navbar">
+        <div class="container nav-container">
+            <div class="logo" onclick="window.location.reload()">
+                <div class="logo-icon">
+                    <svg class="logo-svg" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M20 2V6M20 34V38M38 20H34M6 20H2" stroke="var(--primary)" stroke-width="2.5" stroke-linecap="round" opacity="0.3"/>
+                        <circle cx="20" cy="20" r="14" stroke="var(--primary)" stroke-width="1.5" stroke-dasharray="1 4" opacity="0.4"/>
+                        <path d="M20 12L24 22H16L20 12Z" fill="url(#logo-grad)" stroke="url(#logo-grad)" stroke-width="2" stroke-linejoin="round"/>
+                        <path d="M20 28V24" stroke="var(--secondary)" stroke-width="3" stroke-linecap="round"/>
+                        <circle cx="20" cy="20" r="18" stroke="url(#logo-grad)" stroke-width="2" opacity="0.2"/>
+                        <defs>
+                            <linearGradient id="logo-grad" x1="16" y1="12" x2="24" y2="28" gradientUnits="userSpaceOnUse">
+                                <stop stop-color="var(--primary)"/>
+                                <stop offset="1" stop-color="var(--secondary)"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                </div>
+                <h1>PathRadar</h1>
+            </div>
+            <nav>
+                <a href="#analyzer" class="nav-link active">Analyzer</a>
+                <a href="#dashboard" class="nav-link" id="nav-dashboard">History</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- Hero & Upload Section -->
+        <section id="analyzer" class="hero-section">
+            <div class="hero-text centered">
+                <div class="badge">AI-Powered Career Intelligence</div>
+                <h2>Stop Guessing. <span class="highlight">Start Growing.</span></h2>
+                <p class="hero-description">PathRadar uses advanced NLP to decode your resume, match you with real-time job openings, and build a personalized step-by-step roadmap to bridge your skill gaps. Our mission is to democratize career growth by providing every professional with a data-driven personal coach.</p>
+                
+                <div class="hero-stats">
+                    <div class="stat-item"><strong>15+</strong><span>Industries</span></div>
+                    <div class="stat-item"><strong>10k+</strong><span>Skill Mappings</span></div>
+                    <div class="stat-item"><strong>Real-time</strong><span>Job Data</span></div>
+                </div>
+            </div>
+
+            <div class="upload-card glass-panel">
+                <form id="analyze-form" class="upload-form">
+                    
+                    <label for="resume" class="file-drop-area" id="file-drop-area">
+                        <div class="file-icon">📄</div>
+                        <p class="file-msg">Drag & Drop your resume or <span class="browse-btn">Browse</span></p>
+                        <p class="file-hint">Supports PDF, PNG, JPG</p>
+                    </label>
+                    <input type="file" id="resume" name="resume" accept=".pdf,.png,.jpg,.jpeg" style="display:none">
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="roles">Target Roles (Optional)</label>
+                            <input type="text" id="roles" name="roles" placeholder="e.g. Data Scientist, Product Manager">
+                        </div>
+                        <div class="form-group">
+                            <label for="location">Location</label>
+                            <input type="text" id="location" name="location" placeholder="e.g. India, Remote" value="India">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn-primary" id="submit-btn">
+                        <span>Analyze Resume</span>
+                        <div class="spinner hidden" id="submit-spinner"></div>
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <!-- Features Section -->
+        <section id="features" class="features-section">
+            <div class="section-header-centered">
+                <span class="badge">Features</span>
+                <h2>Everything you need to <span class="highlight">Level Up</span></h2>
+            </div>
+            
+            <div class="features-grid">
+                <div class="feature-card glass-panel">
+                    <div class="feature-icon">🧠</div>
+                    <h3>Semantic AI Analysis</h3>
+                    <p>Our engine doesn't just scan words; it understands the semantic context of your experience using advanced NLP.</p>
+                </div>
+                
+                <div class="feature-card glass-panel">
+                    <div class="feature-icon">🌐</div>
+                    <h3>Live Job Integration</h3>
+                    <p>Instantly fetch real-world listings from LinkedIn, Indeed, and more to see exactly where you stand in today's market.</p>
+                </div>
+                
+                <div class="feature-card glass-panel">
+                    <div class="feature-icon">🗺️</div>
+                    <h3>Smart Roadmaps</h3>
+                    <p>Get a direct bridge to your dream role with engagement-scored video tutorials and step-by-step learning paths.</p>
+                </div>
+
+                <div class="feature-card glass-panel">
+                    <div class="feature-icon">🔄</div>
+                    <h3>Skill Transferability</h3>
+                    <p>Discover which of your current skills can be used in entirely new industries you might not have considered.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- How it Works -->
+        <section class="how-it-works glass-panel">
+            <div class="steps-container">
+                <div class="work-step">
+                    <div class="step-circle">1</div>
+                    <h4>Upload</h4>
+                    <p>Drop your PDF or Image resume</p>
+                </div>
+                <div class="work-step">
+                    <div class="step-circle">2</div>
+                    <h4>Analyze</h4>
+                    <p>AI decodes your skill DNA</p>
+                </div>
+                <div class="work-step">
+                    <div class="step-circle">3</div>
+                    <h4>Target</h4>
+                    <p>Pick a role or industry</p>
+                </div>
+                <div class="work-step">
+                    <div class="step-circle">4</div>
+                    <h4>Learn</h4>
+                    <p>Follow your custom roadmap</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Why Choose PathRadar? -->
+        <section class="benefits-section">
+            <div class="benefits-content">
+                <div class="benefit-text">
+                    <span class="badge">Why PathRadar?</span>
+                    <h2>Unlocking the <span class="highlight">Hidden Market</span></h2>
+                    <p>Most job seekers focus on what they *can't* do. PathRadar shows you what you *can* do. By mapping your existing "Skill DNA" across multiple industries, we help you find roles you never thought were possible.</p>
+                    
+                    <div class="benefit-points">
+                        <div class="point">
+                            <span class="point-icon">⚡</span>
+                            <div>
+                                <h4>Fast-Track Your Learning</h4>
+                                <p>Don't waste months on generic courses. Get the exact 5-10 videos you need to land the job.</p>
+                            </div>
+                        </div>
+                        <div class="point" style="margin-top: 1.5rem;">
+                            <span class="point-icon">📈</span>
+                            <div>
+                                <h4>Track Your Readiness</h4>
+                                <p>Our real-time match score updates as you learn, showing you exactly when you're ready to apply.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="benefit-image glass-panel">
+                    <img src="pathradar_preview.png" alt="PathRadar AI Dashboard Preview" class="benefit-preview-img">
+                </div>
+            </div>
+        </section>
+
+        <!-- Loading State Overlay -->
+        <div id="loading-overlay" class="loading-overlay hidden">
+            <div class="loader-content">
+                <div class="radar-spinner"></div>
+                <h3 id="loading-text">Reading your resume...</h3>
+                <p id="loading-sub">Extracting text from your document</p>
+                <div class="progress-bar-wrap">
+                    <div class="progress-bar-track">
+                        <div class="progress-bar-fill" id="progress-bar-fill"></div>
+                    </div>
+                    <span class="progress-pct" id="progress-pct">10%</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <section id="results" class="results-section hidden">
+            <div class="section-header">
+                <h2>Analysis <span class="highlight">Results</span></h2>
+                <button class="btn-secondary" id="btn-new-analysis">New Analysis</button>
+            </div>
+
+            <div class="results-grid">
+                <!-- Summary Column -->
+                <div class="summary-col">
+                    <div class="glass-panel stat-card score-card">
+                        <h3>Best Match Score</h3>
+                        <div class="score-display">
+                            <span class="score-value">0%</span>
+                            <span class="score-label">Average Fit</span>
+                        </div>
+                    </div>
+
+                    <div class="glass-panel stat-card">
+                        <h3>Your Top Skills</h3>
+                        <div id="user-skills-container" class="tags-container">
+                            <!-- Skills injected here -->
+                        </div>
+                    </div>
+
+                    <div class="glass-panel stat-card">
+                        <h3>Recommended Industries</h3>
+                        <ul id="user-industries-list" class="industry-list">
+                            <!-- Industries injected here -->
+                        </ul>
+                    </div>
+
+                    <div class="glass-panel chart-container">
+                        <h3>Skill Cluster Distribution</h3>
+                        <canvas id="cluster-chart-canvas"></canvas>
+                        <div class="img-placeholder hidden" id="cluster-chart-placeholder">Generating interactive chart...</div>
+                    </div>
+                </div>
+
+                <!-- Roles Column -->
+                <div class="roles-col">
+                    <h3>Job Matches</h3>
+                    <div id="roles-container" class="roles-list">
+                        <!-- Role cards injected here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Industry Skills Explorer (NEW) -->
+            <div class="industry-explorer-section glass-panel mt-4">
+                <div class="section-header-small">
+                    <h3>Industry Skills Explorer</h3>
+                    <p style="font-size:0.8rem;color:var(--text-muted)">Click an industry to see required skills</p>
+                </div>
+                <div class="industry-table-wrapper">
+                    <table class="industry-table" id="industry-skills-table">
+                        <thead>
+                            <tr>
+                                <th>Industry</th>
+                                <th>Core Skills</th>
+                            </tr>
+                        </thead>
+                        <tbody id="industry-skills-body">
+                            <!-- Data injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Dashboard History Section -->
+        <section id="dashboard" class="dashboard-section hidden">
+            <div class="section-header">
+                <h2>Analysis <span class="highlight">History</span></h2>
+            </div>
+            <div class="history-grid" id="history-container">
+                <!-- History items injected here -->
+                <p class="empty-state">No past analyses found.</p>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-logo">
+                    <div class="logo-icon">
+                        <svg class="logo-svg" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="20" cy="20" r="16" stroke="var(--primary)" stroke-width="2" opacity="0.3"/>
+                            <path d="M20 12L24 22H16L20 12Z" fill="var(--primary)"/>
+                        </svg>
+                    </div>
+                    <h2>PathRadar</h2>
+                </div>
+                <p>© 2026 PathRadar AI. All rights reserved. Powering the future of work.</p>
+                <div class="footer-links">
+                    <a href="#">Privacy</a>
+                    <a href="#">Terms</a>
+                    <a href="#">Contact</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Job Links Modal -->
+    <div id="job-modal" class="modal hidden">
+        <div class="modal-content glass-panel">
+            <button class="close-modal" id="close-job-modal">&times;</button>
+            <h3 id="modal-role-title">Job Listings</h3>
+            <div id="job-links-container" class="job-links-list"></div>
+        </div>
+    </div>
+
+    <!-- Role Detail Modal -->
+    <div id="role-modal" class="modal hidden">
+        <div class="modal-content glass-panel role-modal-inner">
+            <button class="close-modal" id="close-role-modal">&times;</button>
+            <div class="role-modal-header">
+                <div>
+                    <h2 id="role-modal-title">Role Title</h2>
+                    <p id="role-modal-industry" style="color:var(--text-muted);margin-top:0.25rem"></p>
+                </div>
+                <div class="role-modal-stats">
+                    <div class="stat-pill">
+                        <span class="stat-label">Match</span>
+                        <span class="stat-value primary" id="role-modal-match">—</span>
+                    </div>
+                    <div class="stat-pill">
+                        <span class="stat-label">AI Similarity</span>
+                        <span class="stat-value accent" id="role-modal-ai">—</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="role-modal-section">
+                <h4>✅ Matched Skills</h4>
+                <div id="role-modal-matched" class="tags-container"></div>
+            </div>
+
+            <div class="role-modal-section">
+                <h4>📚 Missing Skills <span style="font-size:0.8rem;font-weight:400;color:var(--text-muted)">(click any skill for its roadmap)</span></h4>
+                <div id="role-modal-missing" class="tags-container"></div>
+            </div>
+
+            <div class="role-modal-section">
+                <h4>💡 Recommendations</h4>
+                <ul id="role-modal-recs" class="rec-list"></ul>
+            </div>
+
+            <div class="role-modal-section">
+                <h4>🏢 Job Listings</h4>
+                <div id="role-modal-jobs" class="job-links-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Skill Roadmap Modal -->
+    <div id="skill-modal" class="modal hidden">
+        <div class="modal-content glass-panel skill-modal-inner">
+            <button class="close-modal" id="close-skill-modal">&times;</button>
+            <h3 id="skill-modal-title">Learning Roadmap</h3>
+            <div id="skill-roadmap" class="skill-roadmap-area"></div>
+            <div id="skill-courses" class="skill-courses-area"></div>
+        </div>
+    </div>
+
+    <!-- Image Full Screen Modal -->
+    <div id="image-modal" class="modal hidden">
+        <div class="modal-content image-modal-content">
+            <button class="close-modal" id="close-image-modal">&times;</button>
+            <img id="full-screen-image" src="" alt="Full Screen Chart">
+        </div>
+    </div>
+
+    <!-- Script -->
+    <script src="app.js"></script>
+</body>
+</html>

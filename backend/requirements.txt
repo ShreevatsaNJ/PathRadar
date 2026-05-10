@@ -1,0 +1,10 @@
+Flask
+Werkzeug
+pdfplumber
+pytesseract
+Pillow
+flask-cors
+requests
+python-dotenv
+matplotlib
+gunicorn
