@@ -2,7 +2,11 @@ import pdfplumber
 import re
 import pytesseract
 from PIL import Image
+from docx import Document as DocxDocument
 import os
+import shutil
+import subprocess
+import tempfile
 import math
 import json
 from collections import Counter
@@ -283,6 +287,60 @@ def extract_text_from_txt(txt_path):
         print(f"Error reading TXT: {e}")
         return ""
 
+def extract_text_from_docx(docx_path):
+    """Extract plain text from a Word .docx (paragraphs and tables)."""
+    try:
+        doc = DocxDocument(docx_path)
+        parts = []
+        for p in doc.paragraphs:
+            t = (p.text or "").strip()
+            if t:
+                parts.append(t)
+        for tbl in doc.tables:
+            for row in tbl.rows:
+                cells = [(cell.text or "").strip() for cell in row.cells]
+                row_txt = " | ".join(c for c in cells if c)
+                if row_txt:
+                    parts.append(row_txt)
+        return "\n".join(parts).strip()
+    except Exception as e:
+        print(f"Error reading DOCX: {e}")
+        return ""
+
+def extract_text_from_doc(doc_path):
+    """Legacy Word .doc via LibreOffice headless conversion to .docx, then plain text."""
+    soffice = shutil.which('soffice') or shutil.which('soffice.exe')
+    if not soffice and os.name == 'nt':
+        for p in (
+            r'C:\Program Files\LibreOffice\program\soffice.exe',
+            r'C:\Program Files (x86)\LibreOffice\program\soffice.exe',
+        ):
+            if os.path.isfile(p):
+                soffice = p
+                break
+    if not soffice:
+        return ''
+    outdir = tempfile.mkdtemp(prefix='pathradar_doc_')
+    try:
+        subprocess.run(
+            [soffice, '--headless', '--convert-to', 'docx', '--outdir', outdir, doc_path],
+            check=True,
+            timeout=120,
+            capture_output=True,
+        )
+        docx_path = None
+        for name in os.listdir(outdir):
+            if name.lower().endswith('.docx'):
+                docx_path = os.path.join(outdir, name)
+                break
+        if docx_path and os.path.isfile(docx_path):
+            return extract_text_from_docx(docx_path)
+    except Exception as e:
+        print(f"Error converting DOC: {e}")
+    finally:
+        shutil.rmtree(outdir, ignore_errors=True)
+    return ''
+
 def extract_text(file_path):
     """Determines file type and extracts text accordingly."""
     ext = os.path.splitext(file_path)[1].lower()
@@ -292,6 +350,10 @@ def extract_text(file_path):
         return extract_text_from_image(file_path)
     elif ext == '.txt':
         return extract_text_from_txt(file_path)
+    elif ext == '.docx':
+        return extract_text_from_docx(file_path)
+    elif ext == '.doc':
+        return extract_text_from_doc(file_path)
     return ""
 
 

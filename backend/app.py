@@ -1,9 +1,14 @@
 import os
 import sqlite3
 import json
-from flask import Flask, request, jsonify, send_file
+import uuid
+import unicodedata
+from flask import Flask, request, jsonify, send_file, session
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+import datetime
 
 # Import our ML/NLP model logic
 from model import (
@@ -31,15 +36,101 @@ from dashboard_generator import (
 from course_fetcher import fetch_courses_for_skill
 
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
-CORS(app)  # Enable CORS for all routes
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'pathradar_secret_key_9988')
+
+# Session cookies on credentialed fetch:
+# SameSite=Lax omits the cookie when the UI origin and API origin differ (e.g. :5500 vs :5000),
+# so analyses save with user_id NULL and history stays empty. None fixes local cross-port dev;
+# in production use HTTPS and set SESSION_COOKIE_SECURE=true (and keep SameSite=None or use one host).
+_app_samesite = os.environ.get('SESSION_COOKIE_SAMESITE', 'None')
+_app_secure = os.environ.get('SESSION_COOKIE_SECURE', '').lower() in ('1', 'true', 'yes')
+app.config.update(
+    SESSION_COOKIE_SAMESITE=_app_samesite,
+    SESSION_COOKIE_SECURE=_app_secure,
+    SESSION_COOKIE_HTTPONLY=True,
+    PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=7)
+)
+
+CORS(app, supports_credentials=True, resources={r"/api/*": {
+    "origins": [
+        "http://localhost:5000", "http://127.0.0.1:5000",
+        "http://localhost:3000", "http://127.0.0.1:3000",
+        "http://localhost:5500", "http://127.0.0.1:5500",
+        "http://localhost:8080", "http://127.0.0.1:8080",
+        "null",
+    ],
+    "allow_headers": ["Content-Type", "Authorization"],
+}})
+
+# Paths relative to this file so DB/uploads are stable regardless of cwd
+_BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.dirname(_BACKEND_DIR)
 
 # Configuration
-UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'txt'}
-DATABASE = 'database.db'
+UPLOAD_FOLDER = os.path.join(_PROJECT_ROOT, 'uploads')
+ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'txt', 'docx', 'doc'}
+DATABASE = os.path.join(_PROJECT_ROOT, 'database.db')
+
+
+def _normalize_upload_name(name):
+    """Strip invisible Unicode / BOM so extensions like .doc are detected reliably."""
+    if name is None:
+        return ''
+    s = unicodedata.normalize('NFKC', str(name))
+    for ch in ('\x00', '\ufeff', '\u200b', '\u200c', '\u200d'):
+        s = s.replace(ch, '')
+    return s.strip()
+
+
+def invalid_resume_file_type_response():
+    kinds = ', '.join(sorted(ALLOWED_EXTENSIONS))
+    return jsonify({
+        'error': (
+            f'Invalid resume file type. Allowed extensions: {kinds}. '
+            'If this list looks wrong, stop all Flask/Python processes and start the app again from the PathRadar folder.'
+        )
+    }), 400
+
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+_AUTH_TOKEN_MAX_AGE = int(datetime.timedelta(days=7).total_seconds())
+
+
+def _auth_signer():
+    return URLSafeTimedSerializer(app.secret_key, salt='pathradar-auth-v1')
+
+
+def make_auth_token(user_id):
+    return _auth_signer().dumps({'uid': user_id})
+
+
+def read_auth_token(token):
+    if not token or not isinstance(token, str):
+        return None
+    try:
+        data = _auth_signer().loads(token, max_age=_AUTH_TOKEN_MAX_AGE)
+        uid = data.get('uid')
+        return int(uid) if uid is not None else None
+    except (BadSignature, SignatureExpired, TypeError, ValueError):
+        return None
+
+
+def bearer_auth_token():
+    auth = request.headers.get('Authorization', '')
+    if auth.startswith('Bearer '):
+        return (auth[7:].strip() or None)
+    return None
+
+
+def effective_user_id():
+    """Logged-in user from Bearer token (works cross-origin) or Flask session cookie."""
+    uid = read_auth_token(bearer_auth_token())
+    if uid is not None:
+        return uid
+    return session.get('user_id')
+
 
 @app.route('/')
 def index():
@@ -48,8 +139,33 @@ def index():
 
 
 def allowed_file(filename):
-    """Check if the uploaded file has a permitted extension."""
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    """Check if the uploaded file has a permitted extension (segment after the last dot)."""
+    name = _normalize_upload_name(filename)
+    if not name or '.' not in name:
+        return False
+    ext = name.rsplit('.', 1)[-1].lower().strip()
+    return ext in ALLOWED_EXTENSIONS
+
+
+def sanitize_display_filename(name, max_len=200):
+    """Name shown in UI / stored in DB: keeps spaces, strips path junk."""
+    if not name:
+        return 'resume'
+    base = os.path.basename(_normalize_upload_name(name))
+    base = base.replace('\\', '').replace('/', '')
+    if not base or base in ('.', '..'):
+        return 'resume'
+    return base[:max_len]
+
+
+def unique_storage_path(upload_folder, display_name):
+    """Filesystem path that is unique and safe (Werkzeug + short UUID prefix)."""
+    safe = secure_filename(display_name)
+    ext = display_name.rsplit('.', 1)[-1].lower() if '.' in display_name else 'dat'
+    if not safe or safe == f'.{ext}' or not safe.strip('.'):
+        safe = f'resume_{uuid.uuid4().hex[:16]}.{ext}'
+    candidate = f'{uuid.uuid4().hex[:10]}_{safe}'
+    return os.path.join(upload_folder, candidate)
 
 
 def get_db_connection():
@@ -60,21 +176,40 @@ def get_db_connection():
 
 
 def init_db():
-    """Initialize the database with the required tables."""
+    """Initialize the database with the required tables and schema updates."""
     conn = get_db_connection()
     
+    # Users table
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            full_name TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
     # Main analysis sessions table
     conn.execute('''
         CREATE TABLE IF NOT EXISTS analysis_sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
             filename TEXT NOT NULL,
             resume_skills TEXT,
             skill_cluster_distribution TEXT,
             industries_detected TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
         )
     ''')
     
+    # Check if user_id column exists (for backward compatibility if DB already exists)
+    try:
+        conn.execute('SELECT user_id FROM analysis_sessions LIMIT 1')
+    except sqlite3.OperationalError:
+        conn.execute('ALTER TABLE analysis_sessions ADD COLUMN user_id INTEGER')
+
     # Per-role results table (many per session)
     conn.execute('''
         CREATE TABLE IF NOT EXISTS role_results (
@@ -100,6 +235,7 @@ def init_db():
 
 # Initialize DB when the app starts
 init_db()
+print(f'PathRadar: resume uploads accept extensions {sorted(ALLOWED_EXTENSIONS)}')
 
 
 # =============================================================================
@@ -111,21 +247,124 @@ def _extract_resume(req):
         return None, None, None, (jsonify({'error': 'No resume part in the request'}), 400)
     
     file = req.files['resume']
-    if file.filename == '':
+    if not file.filename or str(file.filename).strip() == '':
         return None, None, None, (jsonify({'error': 'No selected file'}), 400)
     
     if not file or not allowed_file(file.filename):
-        return None, None, None, (jsonify({'error': 'Invalid file type. Please upload a PDF, PNG, JPG, or JPEG.'}), 400)
-    
-    filename = secure_filename(file.filename)
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        return None, None, None, invalid_resume_file_type_response()
+
+    display_name = sanitize_display_filename(file.filename)
+    if not allowed_file(display_name):
+        return None, None, None, invalid_resume_file_type_response()
+
+    filepath = unique_storage_path(app.config['UPLOAD_FOLDER'], display_name)
     file.save(filepath)
-    
+
     resume_text = extract_text(filepath)
+    ext = os.path.splitext(display_name)[1].lower()
     if not resume_text or len(resume_text.strip()) < 10:
-        return None, None, None, (jsonify({'error': 'Could not extract text. Please upload a clearer image/PDF.'}), 400)
-    
-    return filepath, filename, resume_text, None
+        try:
+            os.unlink(filepath)
+        except OSError:
+            pass
+        if ext == '.doc':
+            return None, None, None, (jsonify({
+                'error': 'Could not read this .doc file. Open it in Microsoft Word and use File → Save As → Word Document (.docx), or install LibreOffice so PathRadar can convert it.'
+            }), 400)
+        return None, None, None, (jsonify({'error': 'Could not extract text. Please upload a clearer image, PDF, or DOCX.'}), 400)
+
+    return filepath, display_name, resume_text, None
+
+
+# =============================================================================
+# AUTHENTICATION ROUTES
+# =============================================================================
+
+@app.route('/api/signup', methods=['POST'])
+def signup():
+    """Register a new user."""
+    data = request.json
+    email = data.get('email', '').strip().lower()
+    password = data.get('password', '')
+    full_name = data.get('full_name', '')
+
+    if not email or not password:
+        return jsonify({'error': 'Email and password are required'}), 400
+
+    conn = get_db_connection()
+    try:
+        password_hash = generate_password_hash(password)
+        conn.execute(
+            'INSERT INTO users (email, password_hash, full_name) VALUES (?, ?, ?)',
+            (email, password_hash, full_name)
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'Email already exists'}), 400
+    finally:
+        conn.close()
+
+    return jsonify({'status': 'success', 'message': 'User registered successfully'}), 201
+
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    """Authenticate user and start session."""
+    data = request.json
+    email = data.get('email', '').strip().lower()
+    password = data.get('password', '')
+
+    conn = get_db_connection()
+    user = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+    conn.close()
+
+    if user and check_password_hash(user['password_hash'], password):
+        session.clear()
+        session.permanent = True
+        session['user_id'] = user['id']
+        session['email'] = user['email']
+        session['full_name'] = user['full_name']
+        return jsonify({
+            'status': 'success',
+            'token': make_auth_token(user['id']),
+            'user': {
+                'id': user['id'],
+                'email': user['email'],
+                'full_name': user['full_name']
+            }
+        }), 200
+
+    return jsonify({'error': 'Invalid email or password'}), 401
+
+
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    """Clear user session."""
+    session.clear()
+    return jsonify({'status': 'success', 'message': 'Logged out successfully'}), 200
+
+
+@app.route('/api/user', methods=['GET'])
+def get_current_user():
+    """Get current logged in user (session cookie or Authorization: Bearer token)."""
+    uid = effective_user_id()
+    if not uid:
+        return jsonify({'status': 'guest'}), 200
+    conn = get_db_connection()
+    user = conn.execute(
+        'SELECT id, email, full_name FROM users WHERE id = ?', (uid,)
+    ).fetchone()
+    conn.close()
+    if not user:
+        return jsonify({'status': 'guest'}), 200
+    return jsonify({
+        'status': 'success',
+        'user': {
+            'id': user['id'],
+            'email': user['email'],
+            'full_name': user['full_name']
+        }
+    }), 200
 
 
 # =============================================================================
@@ -139,7 +378,7 @@ def analyze():
     returns per-role results with skill clustering and transferability.
     
     Form data:
-        resume (file): Resume file (PDF/PNG/JPG)
+        resume (file): Resume file (PDF/DOCX/PNG/JPG/TXT)
         roles (str): Comma-separated roles, OR leave empty for auto-detection
         location (str): Location filter (default: India)
     """
@@ -180,12 +419,15 @@ def analyze():
     industries = detect_best_industries(resume_skills)
     
     # Store session in DB
+    user_id = effective_user_id()
+    
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO analysis_sessions (filename, resume_skills, skill_cluster_distribution, industries_detected)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO analysis_sessions (user_id, filename, resume_skills, skill_cluster_distribution, industries_detected)
+        VALUES (?, ?, ?, ?, ?)
     ''', (
+        user_id,
         filename,
         json.dumps(analysis["resume_skills"]),
         json.dumps(analysis["skill_clusters"]),
@@ -280,12 +522,15 @@ def analyze_industry():
     industries_detected = detect_best_industries(resume_skills)
     
     # Store in DB
+    user_id = effective_user_id()
+    
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO analysis_sessions (filename, resume_skills, skill_cluster_distribution, industries_detected)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO analysis_sessions (user_id, filename, resume_skills, skill_cluster_distribution, industries_detected)
+        VALUES (?, ?, ?, ?, ?)
     ''', (
+        user_id,
         filename,
         json.dumps(analysis["resume_skills"]),
         json.dumps(analysis["skill_clusters"]),
@@ -497,17 +742,64 @@ def get_transferability(session_id):
 
 
 # =============================================================================
+# POST /api/claim-session — Link a guest session to the current user
+# =============================================================================
+@app.route('/api/claim-session', methods=['POST'])
+def claim_session():
+    """Link an anonymous analysis session to the logged-in user."""
+    user_id = effective_user_id()
+    if not user_id:
+        return jsonify({'error': 'Login required to claim history'}), 401
+
+    data = request.json
+    session_id = data.get('session_id')
+    
+    if not session_id:
+        return jsonify({'error': 'session_id is required'}), 400
+
+    conn = get_db_connection()
+    # Only allow claiming if it doesn't already belong to someone else
+    existing = conn.execute('SELECT user_id FROM analysis_sessions WHERE id = ?', (session_id,)).fetchone()
+    
+    if not existing:
+        conn.close()
+        return jsonify({'error': 'Session not found'}), 404
+        
+    if existing['user_id'] is not None and existing['user_id'] != user_id:
+        conn.close()
+        return jsonify({'error': 'Session already belongs to another user'}), 403
+
+    conn.execute('UPDATE analysis_sessions SET user_id = ? WHERE id = ?', (user_id, session_id))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'status': 'success', 'message': 'Session linked to your account'}), 200
+
+
+# =============================================================================
 # GET /api/dashboard — History of all analysis sessions
 # =============================================================================
 @app.route('/api/dashboard', methods=['GET'])
 def get_dashboard():
-    """Fetch a history of all past analysis sessions with summary."""
+    """Fetch a history of past analysis sessions for the logged-in user."""
+    user_id = effective_user_id()
+    if not user_id:
+        return jsonify({
+            'status': 'success',
+            'count': 0,
+            'data': [],
+            'message': 'Login to see your analysis history'
+        }), 200
+
     conn = get_db_connection()
-    sessions = conn.execute('SELECT * FROM analysis_sessions ORDER BY created_at DESC').fetchall()
+    sessions = conn.execute(
+        'SELECT * FROM analysis_sessions WHERE user_id = ? ORDER BY created_at DESC',
+        (user_id,)
+    ).fetchall()
     
     dashboard = []
-    for session in sessions:
-        sd = dict(session)
+    for row in sessions:
+        sd = dict(row)
         sd['resume_skills'] = json.loads(sd['resume_skills']) if sd['resume_skills'] else []
         sd['industries_detected'] = json.loads(sd['industries_detected']) if sd['industries_detected'] else []
         

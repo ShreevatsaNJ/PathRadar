@@ -45,13 +45,248 @@
             <nav>
                 <a href="#analyzer" class="nav-link active">Analyzer</a>
                 <a href="#dashboard" class="nav-link" id="nav-dashboard">History</a>
+                <div class="nav-auth" id="nav-auth">
+                    <button class="btn-login-outline" id="btn-login-open">Login</button>
+                </div>
+                <div class="nav-user hidden" id="nav-user">
+                    <div class="user-profile">
+                        <span class="user-initials" id="user-initials">JS</span>
+                        <div class="user-dropdown glass-panel">
+                            <p class="user-email" id="user-email-display">user@example.com</p>
+                            <hr>
+                            <button class="dropdown-item" id="btn-logout">Logout</button>
+                        </div>
+                    </div>
+                </div>
             </nav>
         </div>
     </header>
 
     <main class="container">
-        <!-- Hero & Upload Section -->
-        <section id="analyzer" class="hero-section">
+        <!-- SCREEN 1: LANDING PAGE (Initial) -->
+        <section id="landing-screen" class="landing-section">
+            <div class="hero-content centered">
+                <div class="hero-badge animate-float">🚀 AI-Powered Career Navigator</div>
+                <h1 class="mega-title">Stop Guessing. <br><span class="highlight">Start Growing.</span></h1>
+                
+                <div class="hero-actions">
+                    <button class="btn-primary btn-large" id="btn-get-started">Get Started Now</button>
+                    <button class="btn-secondary btn-large" id="btn-explore-features">Explore Features</button>
+                </div>
+
+                <div id="details-section-brief" class="details-section glass-panel">
+                    <div class="details-grid">
+                        <div class="detail-block">
+                            <div class="detail-icon">🔍</div>
+                            <h3>Deep Skill Decoding</h3>
+                            <p>Our AI understands the context and technical depth of your experience using advanced Semantic Analysis.</p>
+                        </div>
+                        <div class="detail-block">
+                            <div class="detail-icon">📈</div>
+                            <h3>Market-Aligned Growth</h3>
+                            <p>We sync with global job boards to show you exactly what skills are trending right now.</p>
+                        </div>
+                        <div class="detail-block">
+                            <div class="detail-icon">🚀</div>
+                            <h3>AI Roadmaps</h3>
+                            <p>Get a step-by-step learning path with hand-picked video tutorials to bridge every gap.</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="hero-stats-grid">
+                    <div class="stat-item">
+                        <span class="stat-num">98%</span>
+                        <span class="stat-lab">Analysis Precision</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-num">10k+</span>
+                        <span class="stat-lab">Careers Mapped</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-num">24/7</span>
+                        <span class="stat-lab">AI Mentorship</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SCREEN 2: DETAILED FEATURES PAGE (New) -->
+        <section id="features-screen" class="features-section-page hidden">
+            <div class="features-page-container">
+                <div class="features-page-header">
+                    <button class="btn-back" id="btn-features-back">← Back to Home</button>
+                    <h1 class="mega-title">Our <span class="highlight">Core Capabilities</span></h1>
+                    <p class="features-intro">Discover the sophisticated AI engine that powers your career transformation.</p>
+                </div>
+
+                <div class="features-detail-list">
+                    <!-- Feature 1 -->
+                    <div class="feature-detail-row glass-panel">
+                        <div class="feature-visual">🔍</div>
+                        <div class="feature-info">
+                            <h2>AI Semantic Decoding</h2>
+                            <p>Traditional resume scanners look for exact keywords. PathRadar uses <strong>Natural Language Processing (NLP)</strong> to understand the context of your achievements. It recognizes that "Managed a team of 10" and "Led a cross-functional department" signify the same high-level leadership capability.</p>
+                            <ul class="feature-highlights">
+                                <li>Contextual Skill Extraction</li>
+                                <li>Seniority Level Detection</li>
+                                <li>Project Impact Quantification</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Feature 2 -->
+                    <div class="feature-detail-row glass-panel alternate">
+                        <div class="feature-visual">📈</div>
+                        <div class="feature-info">
+                            <h2>Live Market Intelligence</h2>
+                            <p>Your career shouldn't be based on yesterday's data. Our engine connects to global job APIs to analyze <strong>real-time hiring trends</strong>. We identify which tech stacks are rising in demand and which ones are becoming obsolete, giving you a massive competitive edge.</p>
+                            <ul class="feature-highlights">
+                                <li>Real-time Demand Sensing</li>
+                                <li>Industry Salary Benchmarking</li>
+                                <li>Emerging Technology Tracking</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Feature 3 -->
+                    <div class="feature-detail-row glass-panel">
+                        <div class="feature-visual">🚀</div>
+                        <div class="feature-info">
+                            <h2>Hyper-Personalized Roadmaps</h2>
+                            <p>Knowing you have a skill gap is only half the battle. PathRadar creates a <strong>custom learning blueprint</strong> specifically for you. We don't just suggest topics; we link you directly to the best free and paid resources on the web, saving you weeks of research.</p>
+                            <ul class="feature-highlights">
+                                <li>Curated Video Tutorials</li>
+                                <li>Progress Tracking Dashboard</li>
+                                <li>Resource Quality Rating</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Feature 4 -->
+                    <div class="feature-detail-row glass-panel alternate">
+                        <div class="feature-visual">🎯</div>
+                        <div class="feature-info">
+                            <h2>Smart Job Matching</h2>
+                            <p>We analyze your <strong>Professional DNA</strong> to find the perfect role fit. Our algorithm looks past job titles to match your actual capabilities with the specific needs of employers, uncovering high-paying roles you might have overlooked.</p>
+                            <ul class="feature-highlights">
+                                <li>Capability-to-Role Mapping</li>
+                                <li>Confidence Score Analysis</li>
+                                <li>"Hidden" Career Path Discovery</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="features-page-footer">
+                    <h3>Ready to see it in action?</h3>
+                    <button class="btn-primary btn-large btn-gate-trigger">Analyze My Resume Now</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- SCREEN 3: AUTHENTICATION PAGE (Redesigned - Two Cards) -->
+        <section id="access-screen" class="auth-page-section hidden">
+            <div class="auth-page-wide-container">
+                <div class="auth-header-centered">
+                    <div class="hero-badge animate-float" style="margin: 0 auto 1.5rem;">🔐 Secure Access</div>
+                    <h1 class="auth-mega-title">Your Career Journey <br><span class="highlight">Starts Here.</span></h1>
+                    <p class="auth-description">Sign in to save your progress, or jump right in as a guest. Either way, powerful AI analysis awaits.</p>
+                </div>
+
+                <div class="auth-grid-duo">
+                    <!-- LOGIN / SIGNUP COMBINED CARD -->
+                    <div class="auth-card-item glass-panel auth-main-card">
+                        <div class="page-auth-tabs">
+                            <button class="auth-tab active" data-tab="login">🔑 Login</button>
+                            <button class="auth-tab" data-tab="signup">✨ Sign Up</button>
+                        </div>
+
+                        <!-- Login Form -->
+                        <form id="page-login-form" class="auth-form">
+                            <div class="form-group">
+                                <label>Email Address</label>
+                                <div class="input-wrapper">
+                                    <input type="email" name="email" placeholder="name@company.com" required>
+                                    <span class="input-icon">✉️</span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Password</label>
+                                <div class="input-wrapper">
+                                    <input type="password" name="password" placeholder="••••••••" required>
+                                    <span class="input-icon">🔒</span>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn-primary full-width">Login Now →</button>
+                            <p class="auth-error hidden" id="page-login-error"></p>
+                        </form>
+
+                        <!-- Signup Form (hidden by default) -->
+                        <form id="page-signup-form" class="auth-form hidden">
+                            <div class="form-group">
+                                <label>Full Name</label>
+                                <div class="input-wrapper">
+                                    <input type="text" name="full_name" placeholder="John Doe" required>
+                                    <span class="input-icon">👤</span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Email Address</label>
+                                <div class="input-wrapper">
+                                    <input type="email" name="email" placeholder="name@company.com" required>
+                                    <span class="input-icon">✉️</span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Password</label>
+                                <div class="input-wrapper">
+                                    <input type="password" name="password" placeholder="Min 8 characters" required>
+                                    <span class="input-icon">🔒</span>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn-primary full-width">Create Account →</button>
+                            <p class="auth-error hidden" id="page-signup-error"></p>
+                        </form>
+                    </div>
+
+                    <!-- GUEST CARD -->
+                    <div class="auth-card-item glass-panel guest-highlight auth-guest-card">
+                        <div class="guest-card-content">
+                            <div class="card-header-icon">⚡</div>
+                            <h3 class="column-title">Quick Access</h3>
+                            <p class="guest-desc-box">Want a quick look? Analyze your resume instantly without creating an account. Perfect for one-time checks.</p>
+                            <div class="guest-perks">
+                                <div class="guest-perk-item">✓ No sign-up required</div>
+                                <div class="guest-perk-item">✓ Full AI analysis</div>
+                                <div class="guest-perk-item">✓ Instant results</div>
+                            </div>
+                        </div>
+                        <button class="btn-guest-cta full-width" id="btn-gate-guest">Continue as Guest →</button>
+                    </div>
+                </div>
+                
+                <div class="auth-benefits-grid">
+                    <div class="auth-benefit-item-small">
+                        <span class="benefit-icon">🧠</span>
+                        <h4>AI-Powered Skill Gap Analysis</h4>
+                    </div>
+                    <div class="auth-benefit-item-small">
+                        <span class="benefit-icon">🗺️</span>
+                        <h4>Personalized Roadmaps</h4>
+                    </div>
+                    <div class="auth-benefit-item-small">
+                        <span class="benefit-icon">📈</span>
+                        <h4>Market-Aligned Growth</h4>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SCREEN 3: WORKSPACE (Hidden initially) -->
+        <div id="workspace-screen" class="hidden">
+            <!-- Hero & Upload Section -->
+            <section id="analyzer" class="hero-section">
             <div class="hero-text centered">
                 <div class="badge">AI-Powered Career Intelligence</div>
                 <h2>Stop Guessing. <span class="highlight">Start Growing.</span></h2>
@@ -70,9 +305,9 @@
                     <label for="resume" class="file-drop-area" id="file-drop-area">
                         <div class="file-icon">📄</div>
                         <p class="file-msg">Drag & Drop your resume or <span class="browse-btn">Browse</span></p>
-                        <p class="file-hint">Supports PDF, PNG, JPG</p>
+                        <p class="file-hint">Supports PDF, DOC, DOCX, PNG, JPG, TXT</p>
                     </label>
-                    <input type="file" id="resume" name="resume" accept=".pdf,.png,.jpg,.jpeg" style="display:none">
+                    <input type="file" id="resume" name="resume" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt" style="display:none">
 
                     <div class="form-row">
                         <div class="form-group">
@@ -133,7 +368,7 @@
                 <div class="work-step">
                     <div class="step-circle">1</div>
                     <h4>Upload</h4>
-                    <p>Drop your PDF or Image resume</p>
+                    <p>Drop your PDF, Word, or image resume</p>
                 </div>
                 <div class="work-step">
                     <div class="step-circle">2</div>
@@ -203,7 +438,9 @@
         <section id="results" class="results-section hidden">
             <div class="section-header">
                 <h2>Analysis <span class="highlight">Results</span></h2>
-                <button class="btn-secondary" id="btn-new-analysis">New Analysis</button>
+                <div class="results-actions">
+                    <button class="btn-primary btn-save-account hidden" id="btn-save-account">Save to Account</button>
+                </div>
             </div>
 
             <div class="results-grid">
@@ -269,16 +506,17 @@
             </div>
         </section>
 
-        <!-- Dashboard History Section -->
-        <section id="dashboard" class="dashboard-section hidden">
-            <div class="section-header">
-                <h2>Analysis <span class="highlight">History</span></h2>
-            </div>
-            <div class="history-grid" id="history-container">
-                <!-- History items injected here -->
-                <p class="empty-state">No past analyses found.</p>
-            </div>
-        </section>
+            <!-- Dashboard History Section -->
+            <section id="dashboard" class="dashboard-section hidden">
+                <div class="section-header">
+                    <h2>Analysis <span class="highlight">History</span></h2>
+                </div>
+                <div class="history-grid" id="history-container">
+                    <!-- History items injected here -->
+                    <p class="empty-state">No past analyses found.</p>
+                </div>
+            </section>
+        </div>
     </main>
 
     <footer class="footer">
@@ -370,6 +608,71 @@
         <div class="modal-content image-modal-content">
             <button class="close-modal" id="close-image-modal">&times;</button>
             <img id="full-screen-image" src="" alt="Full Screen Chart">
+        </div>
+    </div>
+
+    <!-- Login/Signup Modal -->
+    <div id="auth-modal" class="modal hidden">
+        <div class="modal-content glass-panel auth-modal-inner">
+            <button class="close-modal" id="close-auth-modal">&times;</button>
+            
+            <div class="auth-tabs">
+                <button class="auth-tab active" data-tab="login">Login</button>
+                <button class="auth-tab" data-tab="signup">Sign Up</button>
+            </div>
+
+            <div class="auth-form-container">
+                <!-- Login Form -->
+                <form id="login-form" class="auth-form">
+                    <h3>Welcome Back</h3>
+                    <p class="auth-sub">Access your saved analysis history</p>
+                    <div class="form-group">
+                        <label>Email Address</label>
+                        <div class="input-wrapper">
+                            <input type="email" name="email" placeholder="name@company.com" required>
+                            <span class="input-icon">✉️</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <div class="input-wrapper">
+                            <input type="password" name="password" placeholder="••••••••" required>
+                            <span class="input-icon">🔒</span>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-primary full-width">Login Now</button>
+                    <p class="auth-error hidden" id="login-error"></p>
+                </form>
+
+                <!-- Signup Form -->
+                <form id="signup-form" class="auth-form hidden">
+                    <h3>Create Account</h3>
+                    <p class="auth-sub">Unlock permanent history tracking</p>
+                    <div class="form-group">
+                        <label>Full Name</label>
+                        <div class="input-wrapper">
+                            <input type="text" name="full_name" placeholder="John Doe" required>
+                            <span class="input-icon">👤</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Email Address</label>
+                        <div class="input-wrapper">
+                            <input type="email" name="email" placeholder="name@company.com" required>
+                            <span class="input-icon">✉️</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <div class="input-wrapper">
+                            <input type="password" name="password" placeholder="Min 8 characters" required>
+                            <span class="input-icon">🔒</span>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-primary full-width">Sign Up</button>
+                    <p class="auth-error hidden" id="signup-error"></p>
+                </form>
+            </div>
         </div>
     </div>
 

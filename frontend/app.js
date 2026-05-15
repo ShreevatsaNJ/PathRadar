@@ -5,6 +5,61 @@ const API_BASE_URL = (
     window.location.hostname === ''
 ) ? 'http://localhost:5000/api' : '/api';
 
+const AUTH_TOKEN_KEY = 'pathradar_auth_token';
+/** Session IDs from analyses not yet linked to an account (survives refresh; claimed on login/init). */
+const PENDING_CLAIM_KEY = 'pathradar_pending_claim_sessions';
+
+function addPendingClaimSession(sessionId) {
+    if (sessionId == null || sessionId === '') return;
+    const id = Number(sessionId);
+    if (!Number.isFinite(id)) return;
+    let ids = [];
+    try {
+        ids = JSON.parse(localStorage.getItem(PENDING_CLAIM_KEY) || '[]');
+    } catch { /* ignore */ }
+    if (!Array.isArray(ids)) ids = [];
+    ids.push(id);
+    const uniq = [...new Set(ids.map(Number).filter(Number.isFinite))].slice(-25);
+    localStorage.setItem(PENDING_CLAIM_KEY, JSON.stringify(uniq));
+}
+
+/** Try to link pending analyses to the current account (Bearer token must already be in storage). */
+async function claimAllPendingSessions() {
+    let ids = [];
+    try {
+        ids = JSON.parse(localStorage.getItem(PENDING_CLAIM_KEY) || '[]');
+    } catch { /* ignore */ }
+    if (!Array.isArray(ids) || !ids.length) return;
+    const remaining = [];
+    for (const raw of ids) {
+        const sid = Number(raw);
+        if (!Number.isFinite(sid)) continue;
+        try {
+            const res = await apiFetch(`${API_BASE_URL}/claim-session`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: sid }),
+            });
+            if (!res.ok) remaining.push(sid);
+        } catch (e) {
+            console.error('Claim failed for session', sid, e);
+            remaining.push(sid);
+        }
+    }
+    if (remaining.length) localStorage.setItem(PENDING_CLAIM_KEY, JSON.stringify(remaining));
+    else localStorage.removeItem(PENDING_CLAIM_KEY);
+}
+
+/** Adds Bearer token when present so history works even if session cookies are not sent (cross-origin). */
+function apiFetch(input, init = {}) {
+    const opt = { credentials: 'include', ...init };
+    const headers = new Headers(opt.headers || {});
+    const t = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (t) headers.set('Authorization', `Bearer ${t}`);
+    opt.headers = headers;
+    return fetch(input, opt);
+}
+
 console.log('DEBUG: PathRadar API Base URL:', API_BASE_URL);
 console.log('DEBUG: Protocol:', window.location.protocol);
 console.log('DEBUG: Hostname:', window.location.hostname);
@@ -13,8 +68,94 @@ console.log('DEBUG: Hostname:', window.location.hostname);
 const roleStore = new Map();
 const learnedSkills = new Set();
 let currentBaseScore = 0;
+let lastSessionId = null; // Track most recent analysis session ID
 let skillChart = null; // Global reference for Chart.js
 let _progressTimers = []; // Track all progress simulation timers
+
+// =========================================================
+// AUTH MANAGER
+// =========================================================
+const AuthManager = {
+    user: null,
+
+    async init() {
+        try {
+            const res = await apiFetch(`${API_BASE_URL}/user`);
+            const data = await res.json();
+            if (res.ok && data.status === 'success') {
+                this.user = data.user;
+                this.updateUI();
+                await claimAllPendingSessions();
+            } else if (res.status === 401 || (data && data.status === 'guest')) {
+                localStorage.removeItem(AUTH_TOKEN_KEY);
+            }
+        } catch (err) {
+            console.error('Auth Init Error:', err);
+        }
+    },
+
+    updateUI() {
+        const navAuth = document.getElementById('nav-auth');
+        const navUser = document.getElementById('nav-user');
+        const userEmail = document.getElementById('user-email-display');
+        const userInitials = document.getElementById('user-initials');
+        const btnSaveAccount = document.getElementById('btn-save-account');
+
+        if (this.user) {
+            if (navAuth) navAuth.classList.add('hidden');
+            if (navUser) navUser.classList.remove('hidden');
+            if (userEmail) userEmail.textContent = this.user.email;
+            if (userInitials) {
+                const name = this.user.full_name || this.user.email;
+                userInitials.textContent = name.substring(0, 2).toUpperCase();
+            }
+            if (btnSaveAccount) btnSaveAccount.classList.add('hidden');
+        } else {
+            if (navAuth) navAuth.classList.remove('hidden');
+            if (navUser) navUser.classList.add('hidden');
+        }
+    },
+
+    async login(email, password) {
+        const res = await apiFetch(`${API_BASE_URL}/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+            if (data.token) localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+            this.user = data.user;
+            this.updateUI();
+            if (lastSessionId != null) addPendingClaimSession(lastSessionId);
+            await claimAllPendingSessions();
+            lastSessionId = null;
+            return { success: true };
+        }
+        return { success: false, error: data.error };
+    },
+
+    async signup(full_name, email, password) {
+        const res = await apiFetch(`${API_BASE_URL}/signup`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ full_name, email, password }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+            return { success: true };
+        }
+        return { success: false, error: data.error };
+    },
+
+    async logout() {
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+        await apiFetch(`${API_BASE_URL}/logout`, { method: 'POST' });
+        this.user = null;
+        this.updateUI();
+        window.location.reload(); // Reset state
+    }
+};
 
 // =========================================================
 // PROGRESS SIMULATION
@@ -95,7 +236,7 @@ window.redirectToYouTube = async (skill) => {
     }
 
     try {
-        const res = await fetch(`${API_BASE_URL}/course-links?skill=${encodeURIComponent(skill)}&t=${Date.now()}`);
+        const res = await apiFetch(`${API_BASE_URL}/course-links?skill=${encodeURIComponent(skill)}&t=${Date.now()}`);
         const data = await res.json();
         if (res.ok && data.links && data.links.youtube_tutorials && data.links.youtube_tutorials.length > 0) {
             window.open(data.links.youtube_tutorials[0].url, '_blank');
@@ -152,7 +293,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const dashboardSection = document.getElementById('dashboard');
 
     const navDashboard = document.getElementById('nav-dashboard');
-    const btnNewAnalysis = document.getElementById('btn-new-analysis');
 
     const jobModal = document.getElementById('job-modal');
     const closeJobModalBtn = document.getElementById('close-job-modal');
@@ -163,6 +303,142 @@ document.addEventListener('DOMContentLoaded', () => {
     const imageModal = document.getElementById('image-modal');
     const closeImageModalBtn = document.getElementById('close-image-modal');
     const fullScreenImage = document.getElementById('full-screen-image');
+
+    const authModal = document.getElementById('auth-modal');
+    const btnLoginOpen = document.getElementById('btn-login-open');
+    const closeAuthModalBtn = document.getElementById('close-auth-modal');
+    const authTabs = document.querySelectorAll('.auth-tab');
+    const loginForm = document.getElementById('login-form');
+    const signupForm = document.getElementById('signup-form');
+    const btnLogout = document.getElementById('btn-logout');
+    const btnSaveAccount = document.getElementById('btn-save-account');
+
+    // Multi-Screen Elements
+    const landingScreen = document.getElementById('landing-screen');
+    const accessScreen = document.getElementById('access-screen');
+    const featuresScreen = document.getElementById('features-screen');
+    const workspaceScreen = document.getElementById('workspace-screen');
+    const btnGetStarted = document.getElementById('btn-get-started');
+    const btnExploreFeatures = document.getElementById('btn-explore-features');
+    const btnFeaturesBack = document.getElementById('btn-features-back');
+    const btnGateLogin = document.getElementById('btn-gate-login');
+    const btnGateGuest = document.getElementById('btn-gate-guest');
+    const btnGateTriggers = document.querySelectorAll('.btn-gate-trigger');
+
+    // Screen Management
+    const ScreenManager = {
+        current: 'landing',
+        
+        show(screenId, pushHistory = true) {
+            if (landingScreen) landingScreen.classList.toggle('hidden', screenId !== 'landing');
+            if (accessScreen) accessScreen.classList.toggle('hidden', screenId !== 'access');
+            if (featuresScreen) featuresScreen.classList.toggle('hidden', screenId !== 'features');
+            if (workspaceScreen) workspaceScreen.classList.toggle('hidden', screenId !== 'workspace');
+            
+            this.current = screenId;
+            
+            // SECURITY: Only block dashboard/history for non-logged-in users
+            // Workspace and results are accessible to guests
+            if (!AuthManager.user && screenId === 'dashboard') {
+                console.log('Blocking guest access to dashboard');
+                this.show('access', false);
+                return;
+            }
+
+            this.updateNavbar();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            if (pushHistory) {
+                history.pushState({ screenId }, '', `#${screenId}`);
+            }
+        },
+
+        updateNavbar() {
+            const nav = document.querySelector('nav');
+            const navDashboard = document.getElementById('nav-dashboard');
+            
+            if (this.current === 'landing' || this.current === 'access' || this.current === 'features') {
+                if (nav) nav.classList.add('hidden');
+            } else {
+                if (nav) nav.classList.remove('hidden');
+                // Hide history link for guests (or based on their category)
+                if (navDashboard) {
+                    if (!AuthManager.user) {
+                        navDashboard.classList.add('hidden');
+                    } else {
+                        navDashboard.classList.remove('hidden');
+                    }
+                }
+            }
+        }
+    };
+
+    // Handle Browser Back/Forward
+    window.addEventListener('popstate', (event) => {
+        if (event.state && event.state.screenId) {
+            ScreenManager.show(event.state.screenId, false);
+        } else {
+            ScreenManager.show('landing', false);
+        }
+    });
+
+    // Initialize Auth
+    AuthManager.init().then(() => {
+        const hash = window.location.hash.replace('#', '') || null;
+        if (AuthManager.user) {
+            // Logged in: go to workspace unless a specific hash like #features is present
+            if (!hash || hash === 'landing' || hash === 'access') {
+                ScreenManager.show('workspace');
+            } else {
+                ScreenManager.show(hash);
+            }
+        } else {
+            // Not logged in: Show landing page first (as requested)
+            if (!hash || hash === 'landing' || hash === 'workspace' || hash === 'access') {
+                ScreenManager.show('landing');
+            } else {
+                ScreenManager.show(hash);
+            }
+        }
+    });
+
+    // Landing Buttons
+    if (btnGetStarted) {
+        btnGetStarted.addEventListener('click', () => {
+            ScreenManager.show('access'); // Go to the dedicated Auth Page
+        });
+    }
+
+    if (btnExploreFeatures) {
+        btnExploreFeatures.addEventListener('click', () => {
+            ScreenManager.show('features');
+        });
+    }
+
+    if (btnFeaturesBack) {
+        btnFeaturesBack.addEventListener('click', () => {
+            ScreenManager.show('landing');
+        });
+    }
+
+    // Gate Buttons
+    if (btnGateLogin) {
+        btnGateLogin.addEventListener('click', () => {
+            authModal.classList.remove('hidden');
+        });
+    }
+
+    if (btnGateGuest) {
+        btnGateGuest.addEventListener('click', () => {
+            ScreenManager.show('workspace');
+        });
+    }
+
+    btnGateTriggers.forEach(btn => {
+        btn.addEventListener('click', () => {
+            ScreenManager.show('access');
+        });
+    });
 
     // =========================================================
     // NAVIGATION
@@ -202,15 +478,146 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (btnNewAnalysis) {
-        btnNewAnalysis.addEventListener('click', () => {
-            if (resultsSection) resultsSection.classList.add('hidden');
-            if (dashboardSection) dashboardSection.classList.add('hidden');
-            setHomeVisibility(true);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-            if (navAnLink) navAnLink.classList.add('active');
+    // =========================================================
+    // AUTH PAGE LOGIC (NEW)
+    // =========================================================
+    const pageAuthTabs = document.querySelectorAll('.page-auth-tabs .auth-tab');
+    const pageLoginForm = document.getElementById('page-login-form');
+    const pageSignupForm = document.getElementById('page-signup-form');
+
+    pageAuthTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            pageAuthTabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            const target = tab.dataset.tab;
+            if (target === 'login') {
+                pageLoginForm.classList.remove('hidden');
+                pageSignupForm.classList.add('hidden');
+            } else {
+                pageLoginForm.classList.add('hidden');
+                pageSignupForm.classList.remove('hidden');
+            }
         });
+    });
+
+    if (pageLoginForm) {
+        pageLoginForm.addEventListener('submit', async e => {
+            e.preventDefault();
+            const formData = new FormData(pageLoginForm);
+            const res = await AuthManager.login(formData.get('email'), formData.get('password'));
+            if (res.success) {
+                ScreenManager.show('workspace');
+            } else {
+                const errEl = document.getElementById('page-login-error');
+                errEl.textContent = res.error;
+                errEl.classList.remove('hidden');
+            }
+        });
+    }
+
+    if (pageSignupForm) {
+        pageSignupForm.addEventListener('submit', async e => {
+            e.preventDefault();
+            const formData = new FormData(pageSignupForm);
+            const res = await AuthManager.signup(
+                formData.get('full_name'),
+                formData.get('email'),
+                formData.get('password')
+            );
+            if (res.success) {
+                await AuthManager.login(formData.get('email'), formData.get('password'));
+                ScreenManager.show('workspace');
+            } else {
+                const errEl = document.getElementById('page-signup-error');
+                errEl.textContent = res.error;
+                errEl.classList.remove('hidden');
+            }
+        });
+    }
+
+    // =========================================================
+    // AUTH MODAL LOGIC (Existing - for in-app popups)
+    // =========================================================
+    if (btnLoginOpen) {
+        btnLoginOpen.addEventListener('click', () => {
+            ScreenManager.show('access'); // Go to dedicated page instead of modal
+        });
+    }
+
+    if (closeAuthModalBtn) {
+        closeAuthModalBtn.addEventListener('click', () => {
+            authModal.classList.add('hidden');
+        });
+    }
+
+    if (btnSaveAccount) {
+        btnSaveAccount.addEventListener('click', () => {
+            authModal.classList.remove('hidden');
+            // Switch to signup by default for saving
+            const signupTab = document.querySelector('.modal [data-tab="signup"]');
+            if (signupTab) signupTab.click();
+        });
+    }
+
+    const modalAuthTabs = document.querySelectorAll('.modal .auth-tab');
+    modalAuthTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            modalAuthTabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            const target = tab.dataset.tab;
+            if (target === 'login') {
+                loginForm.classList.remove('hidden');
+                signupForm.classList.add('hidden');
+            } else {
+                loginForm.classList.add('hidden');
+                signupForm.classList.remove('hidden');
+            }
+        });
+    });
+
+    if (loginForm) {
+        loginForm.addEventListener('submit', async e => {
+            e.preventDefault();
+            const formData = new FormData(loginForm);
+            const res = await AuthManager.login(formData.get('email'), formData.get('password'));
+            if (res.success) {
+                authModal.classList.add('hidden');
+                ScreenManager.show('workspace');
+                if (!dashboardSection.classList.contains('hidden')) {
+                    loadDashboardHistory();
+                }
+            } else {
+                const errEl = document.getElementById('login-error');
+                errEl.textContent = res.error;
+                errEl.classList.remove('hidden');
+            }
+        });
+    }
+
+    if (signupForm) {
+        signupForm.addEventListener('submit', async e => {
+            e.preventDefault();
+            const formData = new FormData(signupForm);
+            const res = await AuthManager.signup(
+                formData.get('full_name'),
+                formData.get('email'),
+                formData.get('password')
+            );
+            if (res.success) {
+                // Auto login after signup
+                await AuthManager.login(formData.get('email'), formData.get('password'));
+                authModal.classList.add('hidden');
+                ScreenManager.show('workspace');
+            } else {
+                const errEl = document.getElementById('signup-error');
+                errEl.textContent = res.error;
+                errEl.classList.remove('hidden');
+            }
+        });
+    }
+
+    if (btnLogout) {
+        btnLogout.addEventListener('click', () => AuthManager.logout());
     }
 
     // =========================================================
@@ -341,11 +748,13 @@ document.addEventListener('DOMContentLoaded', () => {
         startProgressSimulation();
 
         try {
-            const res = await fetch(`${API_BASE_URL}/analyze`, { method: 'POST', body: formData });
+            const res = await apiFetch(`${API_BASE_URL}/analyze`, { method: 'POST', body: formData });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Analysis failed.');
 
             setHomeVisibility(false); // Hide landing page sections
+            lastSessionId = data.session_id;
+            addPendingClaimSession(data.session_id);
             renderResults(data);
 
             if (analyzerSection) analyzerSection.classList.add('hidden');
@@ -376,6 +785,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (scoreVal) scoreVal.textContent = `${currentBaseScore.toFixed(1)}%`;
         }
         learnedSkills.clear();
+
+        // Show "Save to Account" if guest
+        if (!AuthManager.user) {
+            btnSaveAccount.classList.remove('hidden');
+        }
 
         const sessionId = data.session_id;
         roleStore.clear();
@@ -643,7 +1057,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadingText.textContent = 'Loading Session...';
         loadingOverlay.classList.remove('hidden');
         try {
-            const res = await fetch(`${API_BASE_URL}/result/${sessionId}`);
+            const res = await apiFetch(`${API_BASE_URL}/result/${sessionId}`);
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Failed to load session.');
 
@@ -683,7 +1097,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const hc = document.getElementById('history-container');
         hc.innerHTML = '<div class="loader-content"><div class="spinner"></div><p style="margin-top:1rem">Loading history...</p></div>';
         try {
-            const res = await fetch(`${API_BASE_URL}/dashboard`);
+            const res = await apiFetch(`${API_BASE_URL}/dashboard`);
             const data = await res.json();
             if (!res.ok) throw new Error(data.error);
 
@@ -726,10 +1140,36 @@ document.addEventListener('DOMContentLoaded', () => {
                     })
                 );
             } else {
-                hc.innerHTML = '<p class="empty-state">No past analyses found.</p>';
+                if (!AuthManager.user) {
+                    hc.innerHTML = `
+                        <div class="empty-state-card glass-panel">
+                            <h3>History is Locked 🔒</h3>
+                            <p>Create an account or login to save your resume analysis history and track your progress over time.</p>
+                            <button class="btn-primary" onclick="document.getElementById('btn-login-open').click()" style="max-width:200px; margin: 0 auto;">Login / Sign Up</button>
+                        </div>
+                    `;
+                } else {
+                    hc.innerHTML = `
+                        <div class=\"empty-state-card glass-panel\">
+                            <h3>No Analysis Found 🔍</h3>
+                            <p>You haven\'t analyzed any resumes yet. Head over to the Analyzer to get started!</p>
+                            <button class=\"btn-primary\" onclick=\"document.querySelector(\'a[href=\\\"#analyzer\\\"]\').click()\" style=\"max-width:200px; margin: 0 auto;\">Go to Analyzer</button>
+                        </div>
+                    `;
+                }
             }
         } catch (err) {
-            hc.innerHTML = `<p style="color:red">Error: ${err.message}</p>`;
+            // Check if error is authentication related or simply empty
+            if (err.message && (err.message.includes('401') || err.message.includes('Unauthorized'))) {
+                AuthManager.logout();
+                return;
+            }
+            hc.innerHTML = `
+                <div class=\"empty-state-card glass-panel\">
+                    <h3>No Resumes Analyzed Yet</h3>
+                    <p>Start your career journey by uploading your resume in the Analyzer section.</p>
+                </div>
+            `;
         }
     }
 
@@ -860,7 +1300,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             // Fetch learning path for this specific role's session
-            const res = await fetch(`${API_BASE_URL}/learning-path/${sessionId}`);
+            const res = await apiFetch(`${API_BASE_URL}/learning-path/${sessionId}`);
             const data = await res.json();
 
             // Find this skill in the path clusters
@@ -893,7 +1333,7 @@ document.addEventListener('DOMContentLoaded', () => {
         body.innerHTML = '<tr><td colspan="2" style="text-align:center;padding:2rem"><div class="spinner"></div></td></tr>';
 
         try {
-            const res = await fetch(`${API_BASE_URL}/industry-skills`);
+            const res = await apiFetch(`${API_BASE_URL}/industry-skills`);
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Failed to load industry skills');
 
@@ -1088,7 +1528,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let fccUrl = `https://www.freecodecamp.org/news/search/?query=${q}`;
 
         try {
-            const res = await fetch(`${API_BASE_URL}/course-links?skill=${encodeURIComponent(skill)}&t=${Date.now()}`);
+            const res = await apiFetch(`${API_BASE_URL}/course-links?skill=${encodeURIComponent(skill)}&t=${Date.now()}`);
             const data = await res.json();
 
             if (res.ok && data.links) {

@@ -3,6 +3,7 @@ Werkzeug
 pdfplumber
 pytesseract
 Pillow
+python-docx
 flask-cors
 requests
 python-dotenv
