@@ -1,1 +1,0 @@
-I am a software engineer with 3 years of experience in Python, Flask, HTML, CSS, JavaScript, React, and SQL. I have worked on machine learning projects and data analysis using Pandas and NumPy. I also have experience with AWS and Docker.

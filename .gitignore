@@ -1,0 +1,24 @@
+# Secrets / local configuration
+.env
+*.env
+backend/.env
+
+# Python runtime artifacts
+__pycache__/
+*.py[cod]
+
+# Local databases
+*.db
+
+# User uploads / generated local files
+uploads/
+backend/uploads/
+
+# Local virtual environments
+.venv/
+venv/
+env/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
