@@ -134,11 +134,12 @@ cd PathRadar
 pip install -r backend/requirements.txt
 ```
 
-### 3. Configure API Keys
+### 3. Configure API Keys & Security Settings
 
 Create or edit the file `backend/.env`:
 
 ```env
+# --- API Keys ---
 # JSearch API Key from RapidAPI (required for live job data)
 # Get yours at: https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch
 RAPIDAPI_KEY=your_rapidapi_key_here
@@ -146,9 +147,25 @@ RAPIDAPI_KEY=your_rapidapi_key_here
 # YouTube Data API v3 Key (optional but recommended for video tutorials)
 # Get yours at: https://console.cloud.google.com/apis/library/youtube.googleapis.com
 YOUTUBE_API_KEY=your_youtube_api_key_here
+
+# Supabase Project settings
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_KEY=your_supabase_anon_key
+SUPABASE_SECRET_KEY=your_supabase_service_role_key
+
+# --- Security Settings ---
+# Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+FLASK_SECRET_KEY=your_random_hex_key_here
+
+# (Optional) CORS origin filter for browser client deployments
+CORS_ORIGIN=https://your-frontend-app.com
+
+# Cookies setup (Set Secure to True if in HTTPS environment)
+SESSION_COOKIE_SECURE=False
+SESSION_COOKIE_SAMESITE=None
 ```
 
-> **Note:** The app works without API keys but will not fetch live job data or YouTube tutorials. It will fall back to curated video links and search-page URLs.
+> **Note:** The app works without YouTube or JSearch API keys by falling back to search query links, but having keys enables real-time descriptions and video course embeddings. Ensure to run with a configured SQLite or Supabase instance.
 
 ### 4. Run the Application
 
@@ -186,14 +203,17 @@ All endpoints are prefixed with `/api`.
 | `POST` | `/api/analyze-industry` | Upload resume + optional `industries`. Analyzes across entire industries with auto-role mapping. |
 | `POST` | `/api/suggest-roles` | Upload resume to auto-detect best-fit roles and industries (no API calls — pure NLP). |
 
-### Results & History
+### Results, History & Reports
 
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/result/<session_id>` | Fetch complete analysis results for a session |
 | `GET` | `/api/skill-clusters/<session_id>` | Get skill clustering breakdown for a session |
 | `GET` | `/api/transferability/<session_id>` | Get skill transferability data for all roles in a session |
-| `GET` | `/api/dashboard` | Fetch all past analysis sessions (requires auth) |
+| `GET` | `/api/apply-jobs/<session_id>?threshold=...` | Get roles with match percentage >= threshold and their job links |
+| `GET` | `/api/learning-path/<session_id>?role=...` | Get a structured learning roadmap for missing skills (filter by role optional) |
+| `GET` | `/api/dashboard-chart/<session_id>?type=...` | Generate Matplotlib charts ('roles', 'clusters', 'industries', 'mindmap', 'full') |
+| `GET` | `/api/dashboard` | Fetch all past analysis sessions for logged-in user (requires auth) |
 | `POST` | `/api/claim-session` | Link a guest analysis session to a logged-in account |
 
 ### Utilities
@@ -203,8 +223,6 @@ All endpoints are prefixed with `/api`.
 | `GET` | `/api/fetch-jobs?role=...&location=...` | Preview live job listings for a role |
 | `GET` | `/api/industry-skills` | List all industries and their required skill clusters |
 | `GET` | `/api/course-links?skill=...` | Get learning resources (YouTube, Coursera, Udemy) for a skill |
-| `GET` | `/api/learning-path/<session_id>/<role>` | Get a structured learning roadmap for missing skills |
-| `GET` | `/api/charts/<session_id>` | Generate Matplotlib dashboard charts |
 
 ---
 
