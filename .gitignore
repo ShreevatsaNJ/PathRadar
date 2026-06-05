@@ -22,3 +22,7 @@ env/
 # OS / editor noise
 .DS_Store
 Thumbs.db
+
+# Generated visualization charts
+charts/
+backend/charts/

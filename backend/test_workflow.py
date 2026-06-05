@@ -10,7 +10,7 @@ print("="*60)
 
 # 1. Upload Resume
 print("\n[Step 1] Uploading Resume to /api/analyze...")
-with open("uploads/dummy_resume.txt", "rb") as f:
+with open("backend/dummy_resume.txt", "rb") as f:
     files = {"resume": ("dummy_resume.txt", f, "text/plain")}
     data = {"roles": "Software Engineer"} # We can specify roles or leave it empty for auto-detect
     
@@ -89,7 +89,7 @@ time.sleep(1)
 
 # 6. Test Cross-Industry Gap Analysis
 print(f"\n[Step 6] Testing Cross-Industry Analysis at /api/analyze-industry...")
-with open("uploads/dummy_resume.txt", "rb") as f:
+with open("backend/dummy_resume.txt", "rb") as f:
     files_ind = {"resume": ("dummy_resume.txt", f, "text/plain")}
     data_ind = {"industries": "Data & Analytics, Management"} 
     ind_res = requests.post(f"http://127.0.0.1:5000/api/analyze-industry", files=files_ind, data=data_ind)

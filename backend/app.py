@@ -1,14 +1,23 @@
 import os
-import sqlite3
 import json
 import uuid
 import unicodedata
+from dotenv import load_dotenv
 from flask import Flask, request, jsonify, send_file, session
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import datetime
+
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
+
+from supabase_db import (
+    DatabaseConfigurationError,
+    DatabaseIntegrityError,
+    get_db_connection,
+    verify_schema,
+)
 
 # Import our ML/NLP model logic
 from model import (
@@ -36,7 +45,15 @@ from dashboard_generator import (
 from course_fetcher import fetch_courses_for_skill
 
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
-app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'pathradar_secret_key_9988')
+
+_flask_secret = os.environ.get('FLASK_SECRET_KEY', '').strip()
+if not _flask_secret:
+    raise RuntimeError(
+        'FLASK_SECRET_KEY is not set. Generate one with: '
+        'python -c "import secrets; print(secrets.token_hex(32))" '
+        'and add it to backend/.env'
+    )
+app.secret_key = _flask_secret
 
 # Session cookies on credentialed fetch:
 # SameSite=Lax omits the cookie when the UI origin and API origin differ (e.g. :5500 vs :5000),
@@ -51,14 +68,19 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=7)
 )
 
+# Build CORS allowed origins from env + safe local defaults (no "null" origin)
+_cors_origins = [
+    "http://localhost:5000", "http://127.0.0.1:5000",
+    "http://localhost:3000", "http://127.0.0.1:3000",
+    "http://localhost:5500", "http://127.0.0.1:5500",
+    "http://localhost:8080", "http://127.0.0.1:8080",
+]
+_prod_origin = os.environ.get('CORS_ORIGIN', '').strip()
+if _prod_origin:
+    _cors_origins.append(_prod_origin)
+
 CORS(app, supports_credentials=True, resources={r"/api/*": {
-    "origins": [
-        "http://localhost:5000", "http://127.0.0.1:5000",
-        "http://localhost:3000", "http://127.0.0.1:3000",
-        "http://localhost:5500", "http://127.0.0.1:5500",
-        "http://localhost:8080", "http://127.0.0.1:8080",
-        "null",
-    ],
+    "origins": _cors_origins,
     "allow_headers": ["Content-Type", "Authorization"],
 }})
 
@@ -69,7 +91,6 @@ _PROJECT_ROOT = os.path.dirname(_BACKEND_DIR)
 # Configuration
 UPLOAD_FOLDER = os.path.join(_PROJECT_ROOT, 'uploads')
 ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'txt', 'docx', 'doc'}
-DATABASE = os.path.join(_PROJECT_ROOT, 'database.db')
 
 
 def _normalize_upload_name(name):
@@ -168,69 +189,9 @@ def unique_storage_path(upload_folder, display_name):
     return os.path.join(upload_folder, candidate)
 
 
-def get_db_connection():
-    """Establish a connection to the SQLite database."""
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
 def init_db():
-    """Initialize the database with the required tables and schema updates."""
-    conn = get_db_connection()
-    
-    # Users table
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            full_name TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-
-    # Main analysis sessions table
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS analysis_sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            filename TEXT NOT NULL,
-            resume_skills TEXT,
-            skill_cluster_distribution TEXT,
-            industries_detected TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id)
-        )
-    ''')
-    
-    # Check if user_id column exists (for backward compatibility if DB already exists)
-    try:
-        conn.execute('SELECT user_id FROM analysis_sessions LIMIT 1')
-    except sqlite3.OperationalError:
-        conn.execute('ALTER TABLE analysis_sessions ADD COLUMN user_id INTEGER')
-
-    # Per-role results table (many per session)
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS role_results (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id INTEGER NOT NULL,
-            job_role TEXT NOT NULL,
-            industry TEXT,
-            match_percentage REAL NOT NULL,
-            ai_semantic_similarity REAL NOT NULL,
-            matched_skills TEXT,
-            missing_skills TEXT,
-            recommendations TEXT,
-            transferability_data TEXT,
-            apply_at TEXT,
-            jobs_analyzed INTEGER DEFAULT 0,
-            FOREIGN KEY (session_id) REFERENCES analysis_sessions(id)
-        )
-    ''')
-    
-    conn.commit()
-    conn.close()
+    """Verify that the required Supabase tables are available."""
+    verify_schema()
 
 
 # Initialize DB when the app starts
@@ -238,11 +199,30 @@ init_db()
 print(f'PathRadar: resume uploads accept extensions {sorted(ALLOWED_EXTENSIONS)}')
 
 
+@app.after_request
+def _security_headers(response):
+    """Add hardening headers to every response."""
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    return response
+
+
+@app.errorhandler(DatabaseConfigurationError)
+def handle_database_configuration_error(error):
+    return jsonify({'error': 'Database unavailable. Please try again later.'}), 503
+
+
 # =============================================================================
 # Helper: Extract resume and validate
 # =============================================================================
 def _extract_resume(req):
-    """Common resume upload + text extraction logic. Returns (filepath, filename, resume_text) or error response."""
+    """Common resume upload + text extraction logic. Returns (filepath, filename, resume_text) or error response.
+    
+    SECURITY: The uploaded file is deleted immediately after text extraction
+    to avoid retaining PII on the server.
+    """
     if 'resume' not in req.files:
         return None, None, None, (jsonify({'error': 'No resume part in the request'}), 400)
     
@@ -262,11 +242,14 @@ def _extract_resume(req):
 
     resume_text = extract_text(filepath)
     ext = os.path.splitext(display_name)[1].lower()
+
+    # Always delete the uploaded file after extraction — PII protection
+    try:
+        os.unlink(filepath)
+    except OSError:
+        pass
+
     if not resume_text or len(resume_text.strip()) < 10:
-        try:
-            os.unlink(filepath)
-        except OSError:
-            pass
         if ext == '.doc':
             return None, None, None, (jsonify({
                 'error': 'Could not read this .doc file. Open it in Microsoft Word and use File → Save As → Word Document (.docx), or install LibreOffice so PathRadar can convert it.'
@@ -291,6 +274,9 @@ def signup():
     if not email or not password:
         return jsonify({'error': 'Email and password are required'}), 400
 
+    if len(password) < 8:
+        return jsonify({'error': 'Password must be at least 8 characters long'}), 400
+
     conn = get_db_connection()
     try:
         password_hash = generate_password_hash(password)
@@ -299,7 +285,7 @@ def signup():
             (email, password_hash, full_name)
         )
         conn.commit()
-    except sqlite3.IntegrityError:
+    except DatabaseIntegrityError:
         return jsonify({'error': 'Email already exists'}), 400
     finally:
         conn.close()
@@ -315,7 +301,7 @@ def login():
     password = data.get('password', '')
 
     conn = get_db_connection()
-    user = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+    user = conn.execute('SELECT id, email, password_hash, full_name FROM users WHERE email = ?', (email,)).fetchone()
     conn.close()
 
     if user and check_password_hash(user['password_hash'], password):
@@ -655,15 +641,39 @@ def fetch_jobs():
 # =============================================================================
 # GET /api/result/<session_id> — Fetch full analysis session
 # =============================================================================
+def _authorize_session(conn, session_id):
+    """SECURITY: Verify the caller is allowed to access a given session.
+
+    Rules:
+      - Guest sessions (user_id IS NULL) are readable by anyone (the guest
+        who created them has no identity to check against).
+      - Owned sessions (user_id IS NOT NULL) are only readable by their owner.
+    Returns (session_row, None) on success, or (None, error_response) on failure.
+    """
+    session_row = conn.execute(
+        'SELECT * FROM analysis_sessions WHERE id = ?', (session_id,)
+    ).fetchone()
+    if session_row is None:
+        return None, (jsonify({'error': 'Session not found!'}), 404)
+
+    owner_id = session_row['user_id']
+    if owner_id is not None:
+        caller_id = effective_user_id()
+        if caller_id is None or caller_id != owner_id:
+            return None, (jsonify({'error': 'Access denied'}), 403)
+
+    return session_row, None
+
+
 @app.route('/api/result/<int:session_id>', methods=['GET'])
 def get_result(session_id):
     """Fetch the complete analysis results for a session."""
     conn = get_db_connection()
-    
-    session = conn.execute('SELECT * FROM analysis_sessions WHERE id = ?', (session_id,)).fetchone()
-    if session is None:
+
+    session, err = _authorize_session(conn, session_id)
+    if err:
         conn.close()
-        return jsonify({'error': 'Session not found!'}), 404
+        return err
     
     roles = conn.execute('SELECT * FROM role_results WHERE session_id = ? ORDER BY match_percentage DESC', (session_id,)).fetchall()
     conn.close()
@@ -697,11 +707,10 @@ def get_result(session_id):
 def get_skill_clusters(session_id):
     """Returns the skill clustering breakdown for a specific session."""
     conn = get_db_connection()
-    session = conn.execute('SELECT skill_cluster_distribution, resume_skills FROM analysis_sessions WHERE id = ?', (session_id,)).fetchone()
+    session, err = _authorize_session(conn, session_id)
     conn.close()
-    
-    if session is None:
-        return jsonify({'error': 'Session not found!'}), 404
+    if err:
+        return err
     
     return jsonify({
         'status': 'success',
@@ -717,11 +726,11 @@ def get_skill_clusters(session_id):
 def get_transferability(session_id):
     """Returns skill transferability analysis for all roles in a session."""
     conn = get_db_connection()
-    
-    session = conn.execute('SELECT * FROM analysis_sessions WHERE id = ?', (session_id,)).fetchone()
-    if session is None:
+
+    session, err = _authorize_session(conn, session_id)
+    if err:
         conn.close()
-        return jsonify({'error': 'Session not found!'}), 404
+        return err
     
     roles = conn.execute('SELECT job_role, industry, transferability_data, missing_skills FROM role_results WHERE session_id = ?', (session_id,)).fetchall()
     conn.close()
@@ -832,10 +841,10 @@ def get_apply_jobs(session_id):
     Roles below 70% are listed separately as 'need_upskilling'.
     """
     conn = get_db_connection()
-    session = conn.execute('SELECT * FROM analysis_sessions WHERE id = ?', (session_id,)).fetchone()
-    if session is None:
+    session, err = _authorize_session(conn, session_id)
+    if err:
         conn.close()
-        return jsonify({'error': 'Session not found!'}), 404
+        return err
     
     roles = conn.execute('SELECT * FROM role_results WHERE session_id = ?', (session_id,)).fetchall()
     conn.close()
@@ -871,10 +880,10 @@ def get_learning_path(session_id):
     Optional query param: role (filter to a specific role's missing skills)
     """
     conn = get_db_connection()
-    session = conn.execute('SELECT * FROM analysis_sessions WHERE id = ?', (session_id,)).fetchone()
-    if session is None:
+    session, err = _authorize_session(conn, session_id)
+    if err:
         conn.close()
-        return jsonify({'error': 'Session not found!'}), 404
+        return err
     
     resume_skills = json.loads(session['resume_skills']) if session['resume_skills'] else []
     
@@ -927,10 +936,10 @@ def get_dashboard_chart(session_id):
         'full' — combined 2x2 dashboard (default)
     """
     conn = get_db_connection()
-    session = conn.execute('SELECT * FROM analysis_sessions WHERE id = ?', (session_id,)).fetchone()
-    if session is None:
+    session, err = _authorize_session(conn, session_id)
+    if err:
         conn.close()
-        return jsonify({'error': 'Session not found!'}), 404
+        return err
     
     roles = conn.execute(
         'SELECT * FROM role_results WHERE session_id = ? ORDER BY match_percentage DESC',
@@ -996,7 +1005,8 @@ def get_course_links():
             'links': links
         }), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f'[course-links] Error fetching courses for "{skill}": {e}')
+        return jsonify({'error': 'Could not fetch course links. Please try again.'}), 500
 
 
 if __name__ == '__main__':

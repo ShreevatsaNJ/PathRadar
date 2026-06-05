@@ -60,9 +60,7 @@ function apiFetch(input, init = {}) {
     return fetch(input, opt);
 }
 
-console.log('DEBUG: PathRadar API Base URL:', API_BASE_URL);
-console.log('DEBUG: Protocol:', window.location.protocol);
-console.log('DEBUG: Hostname:', window.location.hostname);
+
 
 // Global store to avoid embedding JSON in HTML attributes (fixes the broken button bug)
 const roleStore = new Map();
@@ -149,11 +147,17 @@ const AuthManager = {
     },
 
     async logout() {
-        localStorage.removeItem(AUTH_TOKEN_KEY);
-        await apiFetch(`${API_BASE_URL}/logout`, { method: 'POST' });
-        this.user = null;
-        this.updateUI();
-        window.location.reload(); // Reset state
+        try {
+            await apiFetch(`${API_BASE_URL}/logout`, { method: 'POST' });
+        } catch (err) {
+            console.error('Logout request failed:', err);
+        } finally {
+            localStorage.removeItem(AUTH_TOKEN_KEY);
+            this.user = null;
+            this.updateUI();
+            window.location.href = `${window.location.pathname}#landing`;
+            window.location.reload(); // Reset state
+        }
     }
 };
 
@@ -263,12 +267,10 @@ function resetChart(id) {
 
 // Catch global errors to help debugging
 window.addEventListener('error', (event) => {
-    console.error('PathRadar Global Error:', event.error);
-    alert(`System Error: ${event.message}. Please check console for details.`);
+    console.error('PathRadar Error:', event.message);
 });
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('PathRadar: DOMContentLoaded initialized');
 
     // --- Elements ---
     const form = document.getElementById('analyze-form');
@@ -636,15 +638,13 @@ document.addEventListener('DOMContentLoaded', () => {
     fileDropArea.addEventListener('drop', e => {
         const files = e.dataTransfer.files;
         if (files && files.length > 0) {
-            console.log('DEBUG: File dropped successfully:', files[0].name);
             
             // Programmatically assign the dropped file to our hidden input
             const dt = new DataTransfer();
             dt.items.add(files[0]);
             resumeInput.files = dt.files;
             
-            // Log to verify
-            console.log('DEBUG: Input now has files:', resumeInput.files.length);
+
             
             // Update the UI message
             updateFileMsg();
@@ -732,11 +732,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // =========================================================
     form.addEventListener('submit', async e => {
         e.preventDefault();
-        console.log('DEBUG: Form submission started');
-        console.log('DEBUG: Files in input:', resumeInput.files);
 
         if (!resumeInput.files || !resumeInput.files[0]) { 
-            console.error('DEBUG: No file selected');
             alert('Please select a resume file.'); 
             return; 
         }

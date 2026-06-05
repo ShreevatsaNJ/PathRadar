@@ -5,6 +5,10 @@ import os
 
 BASE_URL = "http://127.0.0.1:5000"
 
+# Locate dummy resume relative to this script
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DUMMY_RESUME_PATH = os.path.join(_SCRIPT_DIR, 'dummy_resume.txt')
+
 def test_endpoints():
     print("Starting API Tests...\n")
     
@@ -14,7 +18,7 @@ def test_endpoints():
     # 1. Test /api/analyze
     print("1. Testing /api/analyze...")
     try:
-        with open('dummy_resume.txt', 'rb') as f:
+        with open(DUMMY_RESUME_PATH, 'rb') as f:
             files = {'resume': f}
             payload = {
                 "roles": "Software / IT",
@@ -44,15 +48,11 @@ def test_endpoints():
     # 2. Test /api/apply-jobs
     print("\n2. Testing /api/apply-jobs...")
     try:
-        # We'll use the first role from the previous step
-        target_role = roles[0]['role'] if roles else "Software Engineer"
-        res = requests.get(f"{BASE_URL}/api/apply-jobs", params={"session_id": session_id, "role": target_role})
+        res = requests.get(f"{BASE_URL}/api/apply-jobs/{session_id}", params={"threshold": 70})
         res.raise_for_status()
         jobs_data = res.json()
         print("OK /api/apply-jobs success!")
-        print(f"   Jobs Found: {len(jobs_data.get('jobs', []))}")
-        if jobs_data.get('jobs'):
-            print(f"   First Job: {jobs_data['jobs'][0].get('job_title')} at {jobs_data['jobs'][0].get('employer_name')}")
+        print(f"   Roles matching threshold: {len(jobs_data.get('jobs', []))}")
             
     except Exception as e:
         print(f"X /api/apply-jobs failed: {e}")
@@ -65,18 +65,20 @@ def test_endpoints():
     print("\n3. Testing /api/learning-path...")
     try:
         target_role = roles[0]['role'] if roles else "Software Engineer"
-        res = requests.get(f"{BASE_URL}/api/learning-path", params={"session_id": session_id, "role": target_role})
+        res = requests.get(f"{BASE_URL}/api/learning-path/{session_id}", params={"role": target_role})
         res.raise_for_status()
         path_data = res.json()
         print("OK /api/learning-path success!")
-        clusters = path_data.get("learning_path", {}).get("skill_clusters", {})
-        print(f"   Clusters: {list(clusters.keys())}")
+        clusters = path_data.get("learning_path", {}).get("clusters", [])
+        print(f"   Clusters: {[c.get('cluster') for c in clusters]}")
         if clusters:
-            first_cluster = list(clusters.keys())[0]
-            if clusters[first_cluster]:
-                first_skill = clusters[first_cluster][0]
-                print(f"   First Skill in {first_cluster}: {first_skill.get('skill')}")
-                print(f"   YouTube links: {len(first_skill.get('resources', {}).get('youtube_tutorials', []))}")
+            first_cluster = clusters[0]
+            skills = first_cluster.get('skills', [])
+            if skills:
+                first_skill = skills[0]
+                print(f"   First Skill in {first_cluster.get('cluster')}: {first_skill.get('skill')}")
+                courses = first_skill.get('courses', {})
+                print(f"   YouTube links: {len(courses.get('youtube_tutorials', [])) if courses else 0}")
     except Exception as e:
         print(f"X /api/learning-path failed: {e}")
         try:
@@ -87,7 +89,7 @@ def test_endpoints():
     # 4. Test /api/dashboard-chart
     print("\n4. Testing /api/dashboard-chart...")
     try:
-        res = requests.get(f"{BASE_URL}/api/dashboard-chart", params={"session_id": session_id, "chart_type": "role_match"})
+        res = requests.get(f"{BASE_URL}/api/dashboard-chart/{session_id}", params={"type": "roles"})
         res.raise_for_status()
         print("OK /api/dashboard-chart success!")
         print(f"   Content-Type: {res.headers.get('Content-Type')}")

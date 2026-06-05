@@ -1662,10 +1662,10 @@ input[type="text"]:focus {
 
 .user-dropdown {
     position: absolute;
-    top: calc(100% + 10px);
+    top: 100%;
     right: 0;
     min-width: 200px;
-    padding: 1rem;
+    padding: 10px 1rem 1rem;
     display: none;
     flex-direction: column;
     gap: 0.5rem;
