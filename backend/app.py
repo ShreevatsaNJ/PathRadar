@@ -214,6 +214,18 @@ def handle_database_configuration_error(error):
     return jsonify({'error': 'Database unavailable. Please try again later.'}), 503
 
 
+@app.errorhandler(Exception)
+def handle_general_exception(error):
+    from werkzeug.exceptions import HTTPException
+    if isinstance(error, HTTPException):
+        return jsonify({'error': error.description}), error.code
+    
+    import traceback
+    traceback.print_exc()
+    
+    return jsonify({'error': f"Internal Server Error: {str(error)}"}), 500
+
+
 # =============================================================================
 # Helper: Extract resume and validate
 # =============================================================================

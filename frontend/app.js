@@ -60,6 +60,24 @@ function apiFetch(input, init = {}) {
     return fetch(input, opt);
 }
 
+async function apiFetchJson(input, init = {}) {
+    const res = await apiFetch(input, init);
+    let data = null;
+    const contentType = res.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+        try {
+            data = await res.json();
+        } catch (e) {
+            console.error('Error parsing JSON response:', e);
+        }
+    }
+    if (!res.ok) {
+        const errMsg = (data && data.error) ? data.error : `HTTP error! status: ${res.status}`;
+        throw new Error(errMsg);
+    }
+    return data;
+}
+
 
 
 // Global store to avoid embedding JSON in HTML attributes (fixes the broken button bug)
@@ -78,17 +96,17 @@ const AuthManager = {
 
     async init() {
         try {
-            const res = await apiFetch(`${API_BASE_URL}/user`);
-            const data = await res.json();
-            if (res.ok && data.status === 'success') {
+            const data = await apiFetchJson(`${API_BASE_URL}/user`);
+            if (data && data.status === 'success') {
                 this.user = data.user;
                 this.updateUI();
                 await claimAllPendingSessions();
-            } else if (res.status === 401 || (data && data.status === 'guest')) {
+            } else if (data && data.status === 'guest') {
                 localStorage.removeItem(AUTH_TOKEN_KEY);
             }
         } catch (err) {
             console.error('Auth Init Error:', err);
+            localStorage.removeItem(AUTH_TOKEN_KEY);
         }
     },
 
@@ -115,13 +133,12 @@ const AuthManager = {
     },
 
     async login(email, password) {
-        const res = await apiFetch(`${API_BASE_URL}/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password }),
-        });
-        const data = await res.json();
-        if (res.ok) {
+        try {
+            const data = await apiFetchJson(`${API_BASE_URL}/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password }),
+            });
             if (data.token) localStorage.setItem(AUTH_TOKEN_KEY, data.token);
             this.user = data.user;
             this.updateUI();
@@ -129,21 +146,22 @@ const AuthManager = {
             await claimAllPendingSessions();
             lastSessionId = null;
             return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
         }
-        return { success: false, error: data.error };
     },
 
     async signup(full_name, email, password) {
-        const res = await apiFetch(`${API_BASE_URL}/signup`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ full_name, email, password }),
-        });
-        const data = await res.json();
-        if (res.ok) {
+        try {
+            await apiFetchJson(`${API_BASE_URL}/signup`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ full_name, email, password }),
+            });
             return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
         }
-        return { success: false, error: data.error };
     },
 
     async logout() {
@@ -240,9 +258,8 @@ window.redirectToYouTube = async (skill) => {
     }
 
     try {
-        const res = await apiFetch(`${API_BASE_URL}/course-links?skill=${encodeURIComponent(skill)}&t=${Date.now()}`);
-        const data = await res.json();
-        if (res.ok && data.links && data.links.youtube_tutorials && data.links.youtube_tutorials.length > 0) {
+        const data = await apiFetchJson(`${API_BASE_URL}/course-links?skill=${encodeURIComponent(skill)}&t=${Date.now()}`);
+        if (data && data.links && data.links.youtube_tutorials && data.links.youtube_tutorials.length > 0) {
             window.open(data.links.youtube_tutorials[0].url, '_blank');
         } else {
             window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(skill)}+tutorial`, '_blank');
@@ -745,9 +762,7 @@ document.addEventListener('DOMContentLoaded', () => {
         startProgressSimulation();
 
         try {
-            const res = await apiFetch(`${API_BASE_URL}/analyze`, { method: 'POST', body: formData });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Analysis failed.');
+            const data = await apiFetchJson(`${API_BASE_URL}/analyze`, { method: 'POST', body: formData });
 
             setHomeVisibility(false); // Hide landing page sections
             lastSessionId = data.session_id;
@@ -1054,9 +1069,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadingText.textContent = 'Loading Session...';
         loadingOverlay.classList.remove('hidden');
         try {
-            const res = await apiFetch(`${API_BASE_URL}/result/${sessionId}`);
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Failed to load session.');
+            const data = await apiFetchJson(`${API_BASE_URL}/result/${sessionId}`);
 
             const mapped = {
                 session_id: data.session.id,
@@ -1094,9 +1107,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const hc = document.getElementById('history-container');
         hc.innerHTML = '<div class="loader-content"><div class="spinner"></div><p style="margin-top:1rem">Loading history...</p></div>';
         try {
-            const res = await apiFetch(`${API_BASE_URL}/dashboard`);
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error);
+            const data = await apiFetchJson(`${API_BASE_URL}/dashboard`);
 
             if (data.data && data.data.length > 0) {
                 hc.innerHTML = '';
@@ -1297,8 +1308,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             // Fetch learning path for this specific role's session
-            const res = await apiFetch(`${API_BASE_URL}/learning-path/${sessionId}`);
-            const data = await res.json();
+            const data = await apiFetchJson(`${API_BASE_URL}/learning-path/${sessionId}`);
 
             // Find this skill in the path clusters
             let skillData = null;
@@ -1330,9 +1340,7 @@ document.addEventListener('DOMContentLoaded', () => {
         body.innerHTML = '<tr><td colspan="2" style="text-align:center;padding:2rem"><div class="spinner"></div></td></tr>';
 
         try {
-            const res = await apiFetch(`${API_BASE_URL}/industry-skills`);
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Failed to load industry skills');
+            const data = await apiFetchJson(`${API_BASE_URL}/industry-skills`);
 
             const { industry_clusters, skill_clusters } = data;
             body.innerHTML = '';
@@ -1525,10 +1533,9 @@ document.addEventListener('DOMContentLoaded', () => {
         let fccUrl = `https://www.freecodecamp.org/news/search/?query=${q}`;
 
         try {
-            const res = await apiFetch(`${API_BASE_URL}/course-links?skill=${encodeURIComponent(skill)}&t=${Date.now()}`);
-            const data = await res.json();
+            const data = await apiFetchJson(`${API_BASE_URL}/course-links?skill=${encodeURIComponent(skill)}&t=${Date.now()}`);
 
-            if (res.ok && data.links) {
+            if (data && data.links) {
                 const { youtube_tutorials, udemy, coursera, freecodecamp } = data.links;
 
                 // YouTube — use the real video URL from the API

@@ -8,6 +8,7 @@ Supports multi-role and multi-industry batch fetching.
 import os
 import requests
 from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Load environment variables from .env file
 load_dotenv()
@@ -270,7 +271,7 @@ def get_combined_job_description(job_role, location="India"):
 
 def fetch_jobs_for_multiple_roles(roles, location="India"):
     """
-    Fetch JDs for multiple roles in one call.
+    Fetch JDs for multiple roles in parallel to prevent gateway timeouts.
     
     Args:
         roles: list of dicts like [{"role": "Data Analyst", "industry": "Data & Analytics"}, ...]
@@ -282,19 +283,27 @@ def fetch_jobs_for_multiple_roles(roles, location="India"):
     roles_data = {}
     errors = []
     
-    for role_entry in roles:
-        role_name = role_entry["role"]
-        industry = role_entry.get("industry", "General")
-        
-        result = get_combined_job_description(role_name, location)
-        
-        if isinstance(result, dict) and "error" in result:
-            errors.append({"role": role_name, "error": result["error"]})
-            continue
-        
-        result["industry"] = industry
-        roles_data[role_name] = result
-    
+    # Run the requests concurrently using a ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=min(len(roles), 6)) as executor:
+        future_to_role = {}
+        for role_entry in roles:
+            role_name = role_entry["role"]
+            industry = role_entry.get("industry", "General")
+            future = executor.submit(get_combined_job_description, role_name, location)
+            future_to_role[future] = (role_name, industry)
+            
+        for future in as_completed(future_to_role):
+            role_name, industry = future_to_role[future]
+            try:
+                result = future.result()
+                if isinstance(result, dict) and "error" in result:
+                    errors.append({"role": role_name, "error": result["error"]})
+                else:
+                    result["industry"] = industry
+                    roles_data[role_name] = result
+            except Exception as exc:
+                errors.append({"role": role_name, "error": f"Failed to fetch: {str(exc)}"})
+                
     return {
         "roles_data": roles_data,
         "errors": errors
