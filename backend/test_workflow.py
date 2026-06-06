@@ -2,7 +2,9 @@ import requests
 import json
 import time
 
-BASE_URL = "http://127.0.0.9:5000/api"
+BASE_URL = "http://127.0.0.1:5000/api"
+
+client = requests.Session()
 
 print("="*60)
 print("🚀 STARTING PATHRADAR END-TO-END WORKFLOW TEST")
@@ -16,7 +18,7 @@ with open("backend/dummy_resume.txt", "rb") as f:
     
     # Use a try-except block just in case the server isn't running
     try:
-        response = requests.post(f"http://127.0.0.1:5000/api/analyze", files=files, data=data)
+        response = client.post(f"http://127.0.0.1:5000/api/analyze", files=files, data=data)
         if response.status_code != 200 and response.status_code != 201:
             print(f"❌ SERVER ERROR ({response.status_code}):\n{response.text}")
             exit(1)
@@ -35,7 +37,7 @@ time.sleep(1)
 
 # 2. Get Full Results
 print(f"\n[Step 2] Fetching Detailed Analysis Results from /api/result/{session_id}...")
-res = requests.get(f"http://127.0.0.1:5000/api/result/{session_id}")
+res = client.get(f"http://127.0.0.1:5000/api/result/{session_id}")
 result_data = res.json()
 print("✅ Success! Retrieved detailed analysis.")
 print(f"   Total Roles Evaluated: {len(result_data.get('role_results', []))}")
@@ -45,7 +47,7 @@ time.sleep(1)
 # 3. Get Learning Path (THIS WILL USE THE YOUTUBE API!)
 print(f"\n[Step 3] Fetching Learning Path & Course Links from /api/learning-path/{session_id}...")
 print("         (This step connects to YouTube API to find real course videos)")
-lp_res = requests.get(f"http://127.0.0.1:5000/api/learning-path/{session_id}")
+lp_res = client.get(f"http://127.0.0.1:5000/api/learning-path/{session_id}")
 lp_data = lp_res.json()
 print("✅ Success! Learning Path Generated.")
 
@@ -65,7 +67,7 @@ for cluster in path.get("clusters", []):
             
 # 4. Get Skill Transferability
 print(f"\n[Step 4] Fetching Skill Transferability from /api/transferability/{session_id}...")
-trans_res = requests.get(f"http://127.0.0.1:5000/api/transferability/{session_id}")
+trans_res = client.get(f"http://127.0.0.1:5000/api/transferability/{session_id}")
 trans_data = trans_res.json()
 print("✅ Success! Transferability Generated.")
 for role_data in trans_data.get("role_transferability", []):
@@ -79,7 +81,7 @@ time.sleep(1)
 
 # 5. Get Skill Clusters
 print(f"\n[Step 5] Fetching Skill Clustering from /api/skill-clusters/{session_id}...")
-cluster_res = requests.get(f"http://127.0.0.1:5000/api/skill-clusters/{session_id}")
+cluster_res = client.get(f"http://127.0.0.1:5000/api/skill-clusters/{session_id}")
 cluster_data = cluster_res.json()
 print("✅ Success! Skill Clusters Analyzed.")
 for cluster_name, cluster_info in cluster_data.get("skill_clusters", {}).items():
@@ -92,7 +94,7 @@ print(f"\n[Step 6] Testing Cross-Industry Analysis at /api/analyze-industry...")
 with open("backend/dummy_resume.txt", "rb") as f:
     files_ind = {"resume": ("dummy_resume.txt", f, "text/plain")}
     data_ind = {"industries": "Data & Analytics, Management"} 
-    ind_res = requests.post(f"http://127.0.0.1:5000/api/analyze-industry", files=files_ind, data=data_ind)
+    ind_res = client.post(f"http://127.0.0.1:5000/api/analyze-industry", files=files_ind, data=data_ind)
     ind_res.raise_for_status()
     ind_data = ind_res.json()
     print("✅ Success! Cross-Industry Analysis Complete.")

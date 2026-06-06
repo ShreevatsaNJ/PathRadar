@@ -55,11 +55,11 @@ if not _flask_secret:
     )
 app.secret_key = _flask_secret
 
-# Session cookies on credentialed fetch:
-# SameSite=Lax omits the cookie when the UI origin and API origin differ (e.g. :5500 vs :5000),
-# so analyses save with user_id NULL and history stays empty. None fixes local cross-port dev;
-# in production use HTTPS and set SESSION_COOKIE_SECURE=true (and keep SameSite=None or use one host).
-_app_samesite = os.environ.get('SESSION_COOKIE_SAMESITE', 'None')
+# Session cookies:
+# Default to Lax for CSRF protection in production (Flask serves the frontend
+# on the same origin).  Override to 'None' in backend/.env only when running
+# the frontend from a different dev-server port (e.g. Live Server on :5500).
+_app_samesite = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
 _app_secure = os.environ.get('SESSION_COOKIE_SECURE', '').lower() in ('1', 'true', 'yes')
 app.config.update(
     SESSION_COOKIE_SAMESITE=_app_samesite,
@@ -221,7 +221,8 @@ def _extract_resume(req):
     """Common resume upload + text extraction logic. Returns (filepath, filename, resume_text) or error response.
     
     SECURITY: The uploaded file is deleted immediately after text extraction
-    to avoid retaining PII on the server.
+    to avoid retaining PII on the server.  The deletion is wrapped in a
+    try/finally so the file is removed even if text extraction crashes.
     """
     if 'resume' not in req.files:
         return None, None, None, (jsonify({'error': 'No resume part in the request'}), 400)
@@ -240,14 +241,18 @@ def _extract_resume(req):
     filepath = unique_storage_path(app.config['UPLOAD_FOLDER'], display_name)
     file.save(filepath)
 
-    resume_text = extract_text(filepath)
-    ext = os.path.splitext(display_name)[1].lower()
-
-    # Always delete the uploaded file after extraction — PII protection
+    # Wrap extraction in try/finally so the upload is ALWAYS deleted,
+    # even if the parser crashes (prevents PII leaks and disk exhaustion).
+    resume_text = ''
     try:
-        os.unlink(filepath)
-    except OSError:
-        pass
+        resume_text = extract_text(filepath)
+    finally:
+        try:
+            os.unlink(filepath)
+        except OSError:
+            pass
+
+    ext = os.path.splitext(display_name)[1].lower()
 
     if not resume_text or len(resume_text.strip()) < 10:
         if ext == '.doc':
@@ -257,6 +262,21 @@ def _extract_resume(req):
         return None, None, None, (jsonify({'error': 'Could not extract text. Please upload a clearer image, PDF, or DOCX.'}), 400)
 
     return filepath, display_name, resume_text, None
+
+
+def _track_guest_session(session_id):
+    """SECURITY: Record a guest analysis session ID in the Flask session cookie.
+
+    This ties the session to the browser that created it so only that browser
+    can later read or claim the results.  Logged-in users skip this because
+    ownership is tracked via user_id in the database.
+    """
+    if effective_user_id() is None:
+        guest_ids = session.get('guest_sessions', [])
+        if session_id not in guest_ids:
+            guest_ids.append(session_id)
+        session['guest_sessions'] = guest_ids
+        session.modified = True
 
 
 # =============================================================================
@@ -444,6 +464,9 @@ def analyze():
     
     conn.commit()
     conn.close()
+
+    # Track ownership for guest users so only their browser can view/claim it
+    _track_guest_session(session_id)
     
     return jsonify({
         'status': 'success',
@@ -546,6 +569,9 @@ def analyze_industry():
     
     conn.commit()
     conn.close()
+
+    # Track ownership for guest users so only their browser can view/claim it
+    _track_guest_session(session_id)
     
     # Group results by industry for cleaner output
     industry_grouped = {}
@@ -645,9 +671,9 @@ def _authorize_session(conn, session_id):
     """SECURITY: Verify the caller is allowed to access a given session.
 
     Rules:
-      - Guest sessions (user_id IS NULL) are readable by anyone (the guest
-        who created them has no identity to check against).
       - Owned sessions (user_id IS NOT NULL) are only readable by their owner.
+      - Guest sessions (user_id IS NULL) are only readable by the browser
+        that created them (tracked via session['guest_sessions']).
     Returns (session_row, None) on success, or (None, error_response) on failure.
     """
     session_row = conn.execute(
@@ -658,8 +684,14 @@ def _authorize_session(conn, session_id):
 
     owner_id = session_row['user_id']
     if owner_id is not None:
+        # Owned session — only the owner may access it
         caller_id = effective_user_id()
         if caller_id is None or caller_id != owner_id:
+            return None, (jsonify({'error': 'Access denied'}), 403)
+    else:
+        # Guest session — only the browser that created it may access it
+        guest_ids = session.get('guest_sessions', [])
+        if session_id not in guest_ids:
             return None, (jsonify({'error': 'Access denied'}), 403)
 
     return session_row, None
@@ -755,7 +787,13 @@ def get_transferability(session_id):
 # =============================================================================
 @app.route('/api/claim-session', methods=['POST'])
 def claim_session():
-    """Link an anonymous analysis session to the logged-in user."""
+    """Link an anonymous analysis session to the logged-in user.
+
+    SECURITY: The caller must have the session ID in their Flask
+    session['guest_sessions'] list (proving they created it) before
+    they can claim it.  This prevents attackers from claiming other
+    users' guest data by guessing sequential IDs.
+    """
     user_id = effective_user_id()
     if not user_id:
         return jsonify({'error': 'Login required to claim history'}), 401
@@ -767,7 +805,6 @@ def claim_session():
         return jsonify({'error': 'session_id is required'}), 400
 
     conn = get_db_connection()
-    # Only allow claiming if it doesn't already belong to someone else
     existing = conn.execute('SELECT user_id FROM analysis_sessions WHERE id = ?', (session_id,)).fetchone()
     
     if not existing:
@@ -778,9 +815,23 @@ def claim_session():
         conn.close()
         return jsonify({'error': 'Session already belongs to another user'}), 403
 
+    # Only allow claiming guest sessions that this browser created
+    if existing['user_id'] is None:
+        guest_ids = session.get('guest_sessions', [])
+        if session_id not in guest_ids:
+            conn.close()
+            return jsonify({'error': 'Access denied'}), 403
+
     conn.execute('UPDATE analysis_sessions SET user_id = ? WHERE id = ?', (user_id, session_id))
     conn.commit()
     conn.close()
+
+    # Remove from guest tracking now that it is owned by the user
+    guest_ids = session.get('guest_sessions', [])
+    if session_id in guest_ids:
+        guest_ids.remove(session_id)
+        session['guest_sessions'] = guest_ids
+        session.modified = True
 
     return jsonify({'status': 'success', 'message': 'Session linked to your account'}), 200
 

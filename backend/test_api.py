@@ -15,6 +15,8 @@ def test_endpoints():
     # Wait for server to start
     time.sleep(2)
     
+    client = requests.Session()
+    
     # 1. Test /api/analyze
     print("1. Testing /api/analyze...")
     try:
@@ -24,7 +26,7 @@ def test_endpoints():
                 "roles": "Software / IT",
                 "location": "India"
             }
-            res = requests.post(f"{BASE_URL}/api/analyze", files=files, data=payload)
+            res = client.post(f"{BASE_URL}/api/analyze", files=files, data=payload)
         res.raise_for_status()
         analyze_data = res.json()
         print("OK /api/analyze success!")
@@ -41,6 +43,15 @@ def test_endpoints():
             print("X No session_id returned!")
             return
             
+        # 1.1 Verify unauthorized access check
+        print("1.1 Testing unauthorized session access (no cookies)...")
+        unauth_res = requests.get(f"{BASE_URL}/api/apply-jobs/{session_id}", params={"threshold": 70})
+        if unauth_res.status_code == 403:
+            print("OK Unauthorized access correctly blocked (403)!")
+        else:
+            print(f"X Unauthorized access check failed: expected 403, got {unauth_res.status_code}")
+            return
+            
     except Exception as e:
         print(f"X /api/analyze failed: {e}")
         return
@@ -48,7 +59,7 @@ def test_endpoints():
     # 2. Test /api/apply-jobs
     print("\n2. Testing /api/apply-jobs...")
     try:
-        res = requests.get(f"{BASE_URL}/api/apply-jobs/{session_id}", params={"threshold": 70})
+        res = client.get(f"{BASE_URL}/api/apply-jobs/{session_id}", params={"threshold": 70})
         res.raise_for_status()
         jobs_data = res.json()
         print("OK /api/apply-jobs success!")
@@ -65,7 +76,7 @@ def test_endpoints():
     print("\n3. Testing /api/learning-path...")
     try:
         target_role = roles[0]['role'] if roles else "Software Engineer"
-        res = requests.get(f"{BASE_URL}/api/learning-path/{session_id}", params={"role": target_role})
+        res = client.get(f"{BASE_URL}/api/learning-path/{session_id}", params={"role": target_role})
         res.raise_for_status()
         path_data = res.json()
         print("OK /api/learning-path success!")
@@ -89,7 +100,7 @@ def test_endpoints():
     # 4. Test /api/dashboard-chart
     print("\n4. Testing /api/dashboard-chart...")
     try:
-        res = requests.get(f"{BASE_URL}/api/dashboard-chart/{session_id}", params={"type": "roles"})
+        res = client.get(f"{BASE_URL}/api/dashboard-chart/{session_id}", params={"type": "roles"})
         res.raise_for_status()
         print("OK /api/dashboard-chart success!")
         print(f"   Content-Type: {res.headers.get('Content-Type')}")

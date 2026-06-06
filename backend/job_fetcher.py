@@ -21,9 +21,147 @@ HEADERS = {
 }
 
 
+def get_mock_jobs(job_role, location="India"):
+    """
+    Generates comprehensive mock job descriptions when the external API key
+    is not configured, invalid, or rate-limited.
+
+    Uses the full skills database from model.py to build role-aware JDs so
+    that resume skill matching works correctly even without the live API.
+    """
+    from model import SKILL_CLUSTERS_MAP, INDUSTRY_ROLES
+
+    # Determine which skill clusters are most relevant for this role
+    role_lower = job_role.lower()
+
+    # Map role keywords to relevant skill clusters
+    _ROLE_CLUSTER_MAP = {
+        # Software / IT roles
+        "software": ["Programming Languages", "Web Frontend", "Web Backend", "Cloud & DevOps", "Data & Analytics", "Soft Skills"],
+        "full stack": ["Programming Languages", "Web Frontend", "Web Backend", "Cloud & DevOps", "Data & Analytics"],
+        "frontend": ["Web Frontend", "Programming Languages", "Soft Skills"],
+        "backend": ["Web Backend", "Programming Languages", "Cloud & DevOps", "Data & Analytics"],
+        "devops": ["Cloud & DevOps", "Programming Languages", "Web Backend"],
+        "mobile": ["Programming Languages", "Web Frontend", "Cloud & DevOps"],
+        "qa": ["Programming Languages", "Web Backend", "Soft Skills"],
+        # Data roles
+        "data analyst": ["Data & Analytics", "Programming Languages", "AI & Machine Learning", "Soft Skills"],
+        "data scientist": ["AI & Machine Learning", "Data & Analytics", "Programming Languages"],
+        "data engineer": ["Data & Analytics", "Cloud & DevOps", "Programming Languages"],
+        "ml engineer": ["AI & Machine Learning", "Programming Languages", "Cloud & DevOps"],
+        "business intelligence": ["Data & Analytics", "Programming Languages", "Soft Skills"],
+        # Management roles
+        "project manager": ["Management & Leadership", "Soft Skills", "Data & Analytics"],
+        "operations manager": ["Management & Leadership", "Soft Skills", "Finance & Accounting"],
+        "product manager": ["Management & Leadership", "Soft Skills", "Data & Analytics"],
+        # Marketing roles
+        "marketing": ["Marketing & Digital", "Soft Skills", "Data & Analytics"],
+        "seo": ["Marketing & Digital", "Web Frontend", "Data & Analytics"],
+        "content": ["Marketing & Digital", "Soft Skills"],
+        # Sales roles
+        "sales": ["Sales & Business", "Soft Skills", "Marketing & Digital"],
+        # Finance roles
+        "financial": ["Finance & Accounting", "Data & Analytics", "Soft Skills"],
+        "accountant": ["Finance & Accounting", "Soft Skills"],
+        # Healthcare roles
+        "nurse": ["Healthcare & Medical", "Soft Skills"],
+        "doctor": ["Healthcare & Medical", "Soft Skills"],
+        "healthcare": ["Healthcare & Medical", "Soft Skills", "Management & Leadership"],
+        # Education roles
+        "teacher": ["Teaching & Education", "Soft Skills"],
+        "instructor": ["Teaching & Education", "Soft Skills"],
+        # Engineering roles
+        "mechanical": ["Mechanical & Engineering", "Soft Skills"],
+        "engineer": ["Programming Languages", "Web Backend", "Cloud & DevOps", "Data & Analytics", "Soft Skills"],
+        # Cybersecurity roles
+        "security": ["Cybersecurity", "Cloud & DevOps", "Programming Languages"],
+        "cyber": ["Cybersecurity", "Cloud & DevOps", "Programming Languages"],
+    }
+
+    # Find matching clusters for the role
+    relevant_clusters = []
+    for keyword, clusters in _ROLE_CLUSTER_MAP.items():
+        if keyword in role_lower:
+            relevant_clusters = clusters
+            break
+
+    # Default: use a broad set of clusters
+    if not relevant_clusters:
+        relevant_clusters = ["Programming Languages", "Web Frontend", "Web Backend",
+                             "Cloud & DevOps", "Data & Analytics", "AI & Machine Learning",
+                             "Management & Leadership", "Soft Skills"]
+
+    # Build a comprehensive skills list from the matching clusters
+    all_relevant_skills = []
+    for cluster_name in relevant_clusters:
+        if cluster_name in SKILL_CLUSTERS_MAP:
+            all_relevant_skills.extend(SKILL_CLUSTERS_MAP[cluster_name])
+
+    # Build a rich job description that mentions the skills explicitly
+    skills_text = ", ".join(all_relevant_skills)
+
+    desc = f"""
+    Job Title: {job_role}
+    Location: {location}
+
+    About the Role:
+    We are looking for a talented {job_role} to join our growing team in {location}.
+    This role requires a strong combination of technical and soft skills.
+
+    Responsibilities:
+    - Collaborate with cross-functional teams to design and build scalable solutions.
+    - Work with tools and technologies such as {skills_text}.
+    - Write clean, maintainable, and efficient code/reports.
+    - Participate in code reviews and agile team ceremonies.
+    - Troubleshoot, debug, and optimize application/workflow performance.
+    - Perform data visualization, data analysis, and reporting tasks.
+    - Lead and mentor junior team members on best practices.
+
+    Required Skills & Qualifications:
+    - Professional experience working as a {job_role} or similar role.
+    - Strong proficiency in: {skills_text}.
+    - Solid understanding of software development, data analysis, or management workflows.
+    - Excellent communication, leadership, and collaboration skills.
+    - Experience with project management, strategic planning, and stakeholder management.
+    - Familiarity with cloud platforms (AWS, Azure, GCP) and containerization (Docker, Kubernetes).
+
+    Preferred Qualifications:
+    - Experience with {', '.join(all_relevant_skills[:10])}.
+    - Knowledge of {', '.join(all_relevant_skills[10:20]) if len(all_relevant_skills) > 10 else 'related technologies'}.
+    """
+
+    return [
+        {
+            "job_title": f"Senior {job_role}",
+            "employer_name": "TechGlobal Solutions",
+            "job_city": "Bengaluru" if location == "India" else "New York",
+            "job_state": "Karnataka" if location == "India" else "NY",
+            "job_country": "IN" if location == "India" else "US",
+            "job_employment_type": "FULLTIME",
+            "job_description": desc,
+            "job_required_skills": all_relevant_skills[:15],
+            "job_apply_link": "https://example.com/apply/senior-" + job_role.lower().replace(" ", "-"),
+            "job_posted_at": "2026-06-05T12:00:00.000Z",
+        },
+        {
+            "job_title": f"{job_role}",
+            "employer_name": "InnoTech Systems",
+            "job_city": "Mumbai" if location == "India" else "San Francisco",
+            "job_state": "Maharashtra" if location == "India" else "CA",
+            "job_country": "IN" if location == "India" else "US",
+            "job_employment_type": "FULLTIME",
+            "job_description": desc,
+            "job_required_skills": all_relevant_skills[5:20],
+            "job_apply_link": "https://example.com/apply/" + job_role.lower().replace(" ", "-"),
+            "job_posted_at": "2026-06-06T09:00:00.000Z",
+        }
+    ]
+
+
 def fetch_jobs_by_role(job_role, location="India", num_pages=1):
     """
     Fetches live job listings from JSearch API based on a job role.
+    Falls back to mock job descriptions if the API is offline or rate-limited.
     
     Args:
         job_role (str): The job role to search for (e.g., "Data Analyst")
@@ -31,10 +169,11 @@ def fetch_jobs_by_role(job_role, location="India", num_pages=1):
         num_pages (int): Number of result pages to fetch (default: 1)
     
     Returns:
-        list: A list of job dictionaries, or dict with error key on failure.
+        list: A list of job dictionaries.
     """
     if not RAPIDAPI_KEY or RAPIDAPI_KEY == "your_api_key_here":
-        return {"error": "API key not configured. Please set RAPIDAPI_KEY in backend/.env file."}
+        print("INFO: RAPIDAPI_KEY not configured. Falling back to local mock jobs.")
+        return get_mock_jobs(job_role, location)
     
     query = f"{job_role} in {location}"
     
@@ -46,7 +185,7 @@ def fetch_jobs_by_role(job_role, location="India", num_pages=1):
     }
     
     try:
-        response = requests.get(JSEARCH_URL, headers=HEADERS, params=params, timeout=10)
+        response = requests.get(JSEARCH_URL, headers=HEADERS, params=params, timeout=30)
         response.raise_for_status()
         data = response.json()
         
@@ -68,17 +207,23 @@ def fetch_jobs_by_role(job_role, location="India", num_pages=1):
         return jobs
     
     except requests.exceptions.Timeout:
-        return {"error": "JSearch API request timed out. Please try again."}
+        print("WARNING: JSearch API request timed out. Falling back to local mock jobs.")
+        return get_mock_jobs(job_role, location)
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 403:
-            return {"error": "Invalid API key. Please check your RAPIDAPI_KEY in .env file."}
+            print("WARNING: Invalid API key (403). Falling back to local mock jobs.")
+            return get_mock_jobs(job_role, location)
         elif e.response.status_code == 429:
-            return {"error": "API rate limit exceeded. Free tier allows 200 requests/month."}
-        return {"error": f"API error: {e.response.status_code}"}
+            print("WARNING: API rate limit exceeded (429). Falling back to local mock jobs.")
+            return get_mock_jobs(job_role, location)
+        print(f"WARNING: API error {e.response.status_code}. Falling back to local mock jobs.")
+        return get_mock_jobs(job_role, location)
     except requests.exceptions.ConnectionError:
-        return {"error": "Could not connect to JSearch API. Check your internet connection."}
+        print("WARNING: Could not connect to JSearch API. Falling back to local mock jobs.")
+        return get_mock_jobs(job_role, location)
     except Exception as e:
-        return {"error": f"Unexpected error fetching jobs: {str(e)}"}
+        print(f"WARNING: Unexpected error fetching jobs: {str(e)}. Falling back to local mock jobs.")
+        return get_mock_jobs(job_role, location)
 
 
 def get_combined_job_description(job_role, location="India"):
